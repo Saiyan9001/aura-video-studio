@@ -216,6 +216,172 @@
                 </StackPanel>
             </Expander>
             
+            <!-- Step 4: Visuals -->
+            <Expander Header="Step 4: Visuals" IsExpanded="True">
+                <StackPanel Spacing="16" Padding="16">
+                    <ComboBox 
+                        Header="Visual Mode"
+                        SelectedItem="{x:Bind ViewModel.VisualMode, Mode=TwoWay}"
+                        HorizontalAlignment="Stretch"
+                        MaxWidth="500"
+                        ToolTipService.ToolTip="Choose visual generation strategy">
+                        <x:String>Stock</x:String>
+                        <x:String>StockOrLocal</x:String>
+                        <x:String>Pro</x:String>
+                    </ComboBox>
+                    
+                    <TextBlock 
+                        Text="Stock Provider Weights (must sum to 100%)"
+                        Style="{ThemeResource SubtitleTextBlockStyle}"/>
+                    
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        
+                        <StackPanel Grid.Column="0" Spacing="8">
+                            <TextBlock 
+                                Text="{x:Bind ViewModel.PexelsWeight, Mode=OneWay, Converter={StaticResource StringFormatConverter}, ConverterParameter='Pexels: {0}%'}"
+                                Style="{ThemeResource CaptionTextBlockStyle}"/>
+                            <Slider 
+                                Minimum="0" 
+                                Maximum="100" 
+                                Value="{x:Bind ViewModel.PexelsWeight, Mode=TwoWay}"
+                                StepFrequency="1"
+                                ToolTipService.ToolTip="Weight for Pexels stock images"/>
+                        </StackPanel>
+                        
+                        <StackPanel Grid.Column="1" Spacing="8">
+                            <TextBlock 
+                                Text="{x:Bind ViewModel.PixabayWeight, Mode=OneWay, Converter={StaticResource StringFormatConverter}, ConverterParameter='Pixabay: {0}%'}"
+                                Style="{ThemeResource CaptionTextBlockStyle}"/>
+                            <Slider 
+                                Minimum="0" 
+                                Maximum="100" 
+                                Value="{x:Bind ViewModel.PixabayWeight, Mode=TwoWay}"
+                                StepFrequency="1"
+                                ToolTipService.ToolTip="Weight for Pixabay stock images"/>
+                        </StackPanel>
+                        
+                        <StackPanel Grid.Column="2" Spacing="8">
+                            <TextBlock 
+                                Text="{x:Bind ViewModel.UnsplashWeight, Mode=OneWay, Converter={StaticResource StringFormatConverter}, ConverterParameter='Unsplash: {0}%'}"
+                                Style="{ThemeResource CaptionTextBlockStyle}"/>
+                            <Slider 
+                                Minimum="0" 
+                                Maximum="100" 
+                                Value="{x:Bind ViewModel.UnsplashWeight, Mode=TwoWay}"
+                                StepFrequency="1"
+                                ToolTipService.ToolTip="Weight for Unsplash stock images"/>
+                        </StackPanel>
+                    </Grid>
+                    
+                    <TextBlock 
+                        Text="Stable Diffusion Parameters (StockOrLocal mode only)"
+                        Style="{ThemeResource SubtitleTextBlockStyle}"
+                        Margin="0,8,0,0"/>
+                    
+                    <InfoBar
+                        Title="NVIDIA GPU Required"
+                        Message="Local Stable Diffusion requires an NVIDIA GPU with at least 6GB VRAM. SDXL model requires 12GB+."
+                        Severity="Informational"
+                        IsClosable="False"/>
+                    
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        
+                        <ComboBox 
+                            Grid.Column="0"
+                            Header="Model"
+                            SelectedItem="{x:Bind ViewModel.SdModel, Mode=TwoWay}"
+                            HorizontalAlignment="Stretch"
+                            ToolTipService.ToolTip="Auto selects based on VRAM (SDXL for 12GB+, SD1.5 for 6-12GB)">
+                            <x:String>Auto</x:String>
+                            <x:String>SDXL</x:String>
+                            <x:String>SD15</x:String>
+                        </ComboBox>
+                        
+                        <ComboBox 
+                            Grid.Column="1"
+                            Header="Size"
+                            SelectedItem="{x:Bind ViewModel.SdSize, Mode=TwoWay}"
+                            HorizontalAlignment="Stretch"
+                            ToolTipService.ToolTip="Image dimensions (Auto matches aspect ratio)">
+                            <x:String>Auto</x:String>
+                            <x:String>1024x576</x:String>
+                            <x:String>576x1024</x:String>
+                            <x:String>1024x1024</x:String>
+                        </ComboBox>
+                    </Grid>
+                    
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        
+                        <StackPanel Grid.Column="0" Spacing="8">
+                            <TextBlock 
+                                Text="{x:Bind ViewModel.SdSteps, Mode=OneWay, Converter={StaticResource StringFormatConverter}, ConverterParameter='Steps: {0}'}"
+                                Style="{ThemeResource CaptionTextBlockStyle}"/>
+                            <Slider 
+                                Minimum="5" 
+                                Maximum="50" 
+                                Value="{x:Bind ViewModel.SdSteps, Mode=TwoWay}"
+                                StepFrequency="5"
+                                TickFrequency="10"
+                                TickPlacement="BottomRight"
+                                ToolTipService.ToolTip="Quality vs speed (20-30 recommended)"/>
+                        </StackPanel>
+                        
+                        <StackPanel Grid.Column="1" Spacing="8">
+                            <TextBlock 
+                                Text="{x:Bind ViewModel.SdCfgScale, Mode=OneWay, Converter={StaticResource StringFormatConverter}, ConverterParameter='CFG Scale: {0:F1}'}"
+                                Style="{ThemeResource CaptionTextBlockStyle}"/>
+                            <Slider 
+                                Minimum="1" 
+                                Maximum="20" 
+                                Value="{x:Bind ViewModel.SdCfgScale, Mode=TwoWay}"
+                                StepFrequency="0.5"
+                                TickFrequency="5"
+                                TickPlacement="BottomRight"
+                                ToolTipService.ToolTip="Prompt adherence (7-9 recommended)"/>
+                        </StackPanel>
+                    </Grid>
+                    
+                    <Grid ColumnSpacing="16">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        
+                        <TextBox 
+                            Grid.Column="0"
+                            Header="Seed"
+                            Text="{x:Bind ViewModel.SdSeed, Mode=TwoWay}"
+                            PlaceholderText="-1 for random"
+                            ToolTipService.ToolTip="Set for reproducible results, -1 for random"/>
+                        
+                        <ComboBox 
+                            Grid.Column="1"
+                            Header="Style"
+                            SelectedItem="{x:Bind ViewModel.VisualStyle, Mode=TwoWay}"
+                            HorizontalAlignment="Stretch"
+                            ToolTipService.ToolTip="Visual style for generated images">
+                            <x:String>cinematic</x:String>
+                            <x:String>photographic</x:String>
+                            <x:String>artistic</x:String>
+                            <x:String>abstract</x:String>
+                        </ComboBox>
+                    </Grid>
+                </StackPanel>
+            </Expander>
+            
             <!-- Progress and Actions -->
             <StackPanel Spacing="16" Margin="0,8,0,0">
                 <ProgressBar 

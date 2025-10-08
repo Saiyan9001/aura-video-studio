@@ -59,6 +59,37 @@ public partial class CreateViewModel : ObservableObject
     [ObservableProperty]
     private PauseStyle _pauseStyle = PauseStyle.Natural;
 
+    // Visual Configuration
+    [ObservableProperty]
+    private string _visualMode = "Stock"; // Stock, StockOrLocal, Pro
+
+    [ObservableProperty]
+    private int _pexelsWeight = 33;
+
+    [ObservableProperty]
+    private int _pixabayWeight = 33;
+
+    [ObservableProperty]
+    private int _unsplashWeight = 34;
+
+    [ObservableProperty]
+    private string _sdModel = "Auto"; // Auto, SDXL, SD15
+
+    [ObservableProperty]
+    private int _sdSteps = 20;
+
+    [ObservableProperty]
+    private double _sdCfgScale = 7.0;
+
+    [ObservableProperty]
+    private int _sdSeed = -1;
+
+    [ObservableProperty]
+    private string _sdSize = "Auto"; // Auto, 1024x576, 576x1024, 1024x1024
+
+    [ObservableProperty]
+    private string _visualStyle = "cinematic"; // cinematic, photographic, artistic, abstract
+
     [ObservableProperty]
     private bool _isGenerating;
 
@@ -169,6 +200,16 @@ public partial class CreateViewModel : ObservableObject
         VoiceRate = 1.0;
         VoicePitch = 0.0;
         PauseStyle = PauseStyle.Natural;
+        VisualMode = "Stock";
+        PexelsWeight = 33;
+        PixabayWeight = 33;
+        UnsplashWeight = 34;
+        SdModel = "Auto";
+        SdSteps = 20;
+        SdCfgScale = 7.0;
+        SdSeed = -1;
+        SdSize = "Auto";
+        VisualStyle = "cinematic";
         StatusMessage = "Ready to generate";
         ProgressPercentage = 0;
     }
