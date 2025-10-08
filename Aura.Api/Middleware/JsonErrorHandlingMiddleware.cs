@@ -25,6 +25,23 @@ public class JsonErrorHandlingMiddleware
         {
             await _next(context);
         }
+        catch (Microsoft.AspNetCore.Http.BadHttpRequestException ex) when (ex.InnerException is JsonException jsonEx)
+        {
+            Log.Warning(jsonEx, "JSON deserialization error: {Message}", jsonEx.Message);
+            
+            context.Response.StatusCode = 400;
+            context.Response.ContentType = "application/problem+json";
+
+            var problemDetails = new ProblemDetails
+            {
+                Status = 400,
+                Title = "Invalid Enum Value",
+                Detail = jsonEx.Message,
+                Type = "https://docs.aura.studio/errors/E303"
+            };
+
+            await context.Response.WriteAsJsonAsync(problemDetails);
+        }
         catch (JsonException ex)
         {
             Log.Warning(ex, "JSON deserialization error: {Message}", ex.Message);
