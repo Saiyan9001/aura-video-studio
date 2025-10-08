@@ -91,6 +91,10 @@ export function SettingsPage() {
   const [savingPaths, setSavingPaths] = useState(false);
   const [testResults, setTestResults] = useState<Record<string, { success: boolean; message: string } | null>>({});
 
+  // Provider validation state
+  const [validating, setValidating] = useState(false);
+  const [validationResults, setValidationResults] = useState<any>(null);
+
   useEffect(() => {
     fetchSettings();
     fetchProfiles();
@@ -217,6 +221,37 @@ export function SettingsPage() {
   const updateApiKey = (key: keyof typeof apiKeys, value: string) => {
     setApiKeys(prev => ({ ...prev, [key]: value }));
     setKeysModified(true);
+  };
+
+  const validateProviders = async () => {
+    setValidating(true);
+    setValidationResults(null);
+    try {
+      const response = await fetch('/api/providers/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}), // Empty body validates all providers
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setValidationResults(data);
+      } else {
+        alert('Failed to validate providers');
+      }
+    } catch (error) {
+      console.error('Error validating providers:', error);
+      alert('Error validating providers');
+    } finally {
+      setValidating(false);
+    }
+  };
+
+  const copyValidationResults = () => {
+    if (validationResults) {
+      const text = JSON.stringify(validationResults, null, 2);
+      navigator.clipboard.writeText(text);
+      alert('Validation results copied to clipboard');
+    }
   };
 
   const fetchProviderPaths = async () => {
@@ -393,6 +428,74 @@ export function SettingsPage() {
                 <Text size={200}>{profile.description}</Text>
               </div>
             ))}
+          </div>
+
+          <div style={{ marginTop: tokens.spacingVerticalXXL }}>
+            <Title2>Provider Validation</Title2>
+            <Text size={200} style={{ marginBottom: tokens.spacingVerticalL }}>
+              Test connectivity and configuration for all providers
+            </Text>
+            <div style={{ display: 'flex', gap: tokens.spacingHorizontalM }}>
+              <Button
+                appearance="primary"
+                onClick={validateProviders}
+                disabled={validating}
+              >
+                {validating ? 'Validating...' : 'Validate Providers'}
+              </Button>
+              {validationResults && (
+                <Button onClick={copyValidationResults}>
+                  Copy Results to Clipboard
+                </Button>
+              )}
+            </div>
+
+            {validationResults && (
+              <div style={{ marginTop: tokens.spacingVerticalL }}>
+                <Text weight="semibold">
+                  Overall Status: {validationResults.ok ? '✅ All OK' : '❌ Issues Found'}
+                </Text>
+                <div style={{ 
+                  marginTop: tokens.spacingVerticalM,
+                  overflowX: 'auto'
+                }}>
+                  <table style={{
+                    width: '100%',
+                    borderCollapse: 'collapse',
+                    fontSize: tokens.fontSizeBase200
+                  }}>
+                    <thead>
+                      <tr style={{ 
+                        borderBottom: `1px solid ${tokens.colorNeutralStroke1}`,
+                        textAlign: 'left'
+                      }}>
+                        <th style={{ padding: tokens.spacingVerticalS }}>Provider</th>
+                        <th style={{ padding: tokens.spacingVerticalS }}>Status</th>
+                        <th style={{ padding: tokens.spacingVerticalS }}>Details</th>
+                        <th style={{ padding: tokens.spacingVerticalS }}>Time (ms)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {validationResults.results.map((result: any, index: number) => (
+                        <tr key={index} style={{
+                          borderBottom: `1px solid ${tokens.colorNeutralStroke2}`,
+                          backgroundColor: result.ok 
+                            ? 'transparent' 
+                            : tokens.colorPaletteRedBackground2
+                        }}>
+                          <td style={{ padding: tokens.spacingVerticalS }}>{result.name}</td>
+                          <td style={{ padding: tokens.spacingVerticalS }}>
+                            {result.ok ? '✅' : '❌'} {result.errorCode || ''}
+                          </td>
+                          <td style={{ padding: tokens.spacingVerticalS }}>{result.details}</td>
+                          <td style={{ padding: tokens.spacingVerticalS }}>{result.elapsedMs}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </div>
         </Card>
       )}
