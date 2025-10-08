@@ -47,6 +47,57 @@ builder.Services.AddCors(options =>
 // Register core services
 builder.Services.AddSingleton<HardwareDetector>();
 builder.Services.AddSingleton<Aura.Core.Configuration.ProviderSettings>();
+
+// Register KeyStore
+builder.Services.AddSingleton<IKeyStore>(sp =>
+{
+    var keysPath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "Aura", "apikeys.json");
+    return new FileKeyStore(keysPath);
+});
+
+// Register ProviderMixingConfig
+builder.Services.AddSingleton<ProviderMixingConfig>(sp =>
+{
+    var config = new ProviderMixingConfig
+    {
+        LogProviderSelection = true,
+        AutoFallback = true
+    };
+    
+    // Load active profile from settings if available
+    var settingsPath = Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "Aura", "settings.json");
+    
+    if (File.Exists(settingsPath))
+    {
+        try
+        {
+            var json = File.ReadAllText(settingsPath);
+            var settings = JsonSerializer.Deserialize<Dictionary<string, object>>(json);
+            if (settings != null && settings.TryGetValue("profile", out var profile))
+            {
+                config.ActiveProfile = profile.ToString() ?? "Free-Only";
+            }
+        }
+        catch
+        {
+            // Use default if loading fails
+        }
+    }
+    
+    return config;
+});
+
+// Register ProviderMixer
+builder.Services.AddSingleton<ProviderMixer>();
+
+// Register LlmRouter
+builder.Services.AddSingleton<LlmRouter>();
+
+// Register default LLM provider (RuleBased as fallback)
 builder.Services.AddSingleton<ILlmProvider, RuleBasedLlmProvider>();
 builder.Services.AddSingleton<ITtsProvider, WindowsTtsProvider>();
 builder.Services.AddSingleton<IVideoComposer>(sp => 
@@ -157,7 +208,15 @@ apiGroup.MapPost("/plan", ([FromBody] PlanRequest request) =>
 .WithOpenApi();
 
 // Script generation endpoint
-apiGroup.MapPost("/script", async ([FromBody] ScriptRequest request, ILlmProvider llmProvider, CancellationToken ct) =>
+apiGroup.MapPost("/script", async (
+    [FromBody] ScriptRequest request, 
+    LlmRouter router,
+    IKeyStore keyStore,
+    HardwareDetector hardwareDetector,
+    IHttpClientFactory httpClientFactory,
+    ILoggerFactory loggerFactory,
+    ProviderMixingConfig providerConfig,
+    CancellationToken ct) =>
 {
     try
     {
@@ -197,7 +256,123 @@ apiGroup.MapPost("/script", async ([FromBody] ScriptRequest request, ILlmProvide
         );
         
         Log.Information("Generating script for topic: {Topic}, duration: {Duration} min", request.Topic, request.TargetDurationMinutes);
-        var script = await llmProvider.DraftScriptAsync(brief, planSpec, ct);
+        
+        // Build available providers based on system configuration
+        var systemProfile = await hardwareDetector.DetectSystemAsync();
+        var availableProviders = new Dictionary<string, ILlmProvider>();
+        
+        // RuleBased is always available
+        availableProviders["RuleBased"] = new RuleBasedLlmProvider(
+            loggerFactory.CreateLogger<RuleBasedLlmProvider>());
+        
+        // Check for Pro providers (require API keys and NOT OfflineOnly)
+        if (systemProfile.OfflineOnly)
+        {
+            Log.Information("OfflineOnly mode enabled - Pro providers blocked (E307)");
+        }
+        else
+        {
+            // Try to add Ollama (local, no API key needed)
+            try
+            {
+                availableProviders["Ollama"] = new OllamaLlmProvider(
+                    loggerFactory.CreateLogger<OllamaLlmProvider>(),
+                    httpClientFactory.CreateClient(),
+                    "http://127.0.0.1:11434",
+                    "llama3.1:8b-q4_k_m");
+            }
+            catch (Exception ex)
+            {
+                Log.Debug(ex, "Ollama provider not available");
+            }
+            
+            // OpenAI
+            if (await keyStore.HasKeyAsync("openai"))
+            {
+                try
+                {
+                    var apiKey = await keyStore.GetKeyAsync("openai");
+                    if (!string.IsNullOrEmpty(apiKey))
+                    {
+                        availableProviders["OpenAI"] = new OpenAiLlmProvider(
+                            loggerFactory.CreateLogger<OpenAiLlmProvider>(),
+                            httpClientFactory.CreateClient(),
+                            apiKey);
+                        Log.Information("OpenAI provider available");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning(ex, "Failed to create OpenAI provider");
+                }
+            }
+            
+            // Azure
+            if (await keyStore.HasKeyAsync("azure"))
+            {
+                try
+                {
+                    var apiKey = await keyStore.GetKeyAsync("azure");
+                    var endpoint = await keyStore.GetKeyAsync("azure_endpoint");
+                    if (!string.IsNullOrEmpty(apiKey) && !string.IsNullOrEmpty(endpoint))
+                    {
+                        availableProviders["Azure"] = new AzureLlmProvider(
+                            loggerFactory.CreateLogger<AzureLlmProvider>(),
+                            httpClientFactory.CreateClient(),
+                            apiKey,
+                            endpoint);
+                        Log.Information("Azure provider available");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning(ex, "Failed to create Azure provider");
+                }
+            }
+            
+            // Gemini
+            if (await keyStore.HasKeyAsync("gemini"))
+            {
+                try
+                {
+                    var apiKey = await keyStore.GetKeyAsync("gemini");
+                    if (!string.IsNullOrEmpty(apiKey))
+                    {
+                        availableProviders["Gemini"] = new GeminiLlmProvider(
+                            loggerFactory.CreateLogger<GeminiLlmProvider>(),
+                            httpClientFactory.CreateClient(),
+                            apiKey);
+                        Log.Information("Gemini provider available");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning(ex, "Failed to create Gemini provider");
+                }
+            }
+        }
+        
+        // Determine preferred tier from active profile
+        var preferredTier = "Free";
+        var activeProfile = providerConfig.SavedProfiles
+            .FirstOrDefault(p => p.Name == providerConfig.ActiveProfile);
+        if (activeProfile != null && activeProfile.Stages.TryGetValue("Script", out var scriptTier))
+        {
+            preferredTier = scriptTier;
+        }
+        
+        Log.Information("Using profile: {Profile}, preferred tier: {Tier}", 
+            providerConfig.ActiveProfile, preferredTier);
+        Log.Information("Available providers: {Providers}", 
+            string.Join(", ", availableProviders.Keys));
+        
+        // Use router to generate script with automatic fallback
+        var script = await router.GenerateScriptAsync(
+            availableProviders, 
+            brief, 
+            planSpec, 
+            preferredTier, 
+            ct);
         
         // Validate script is not empty
         if (string.IsNullOrWhiteSpace(script))
