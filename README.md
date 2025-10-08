@@ -34,7 +34,20 @@ See [ARCHITECTURE.md](./ARCHITECTURE.md) for complete details.
 
 ## 🚦 Quick Start
 
-### Development (Linux/Windows)
+### For End Users (Portable Distribution)
+
+**Download and Run:**
+1. Download the latest `AuraVideoStudio_Portable_x64_[version].zip` from [Releases](../../releases)
+2. Extract to any folder (e.g., `C:\Tools\AuraVideoStudio\`)
+3. Double-click `Launch.bat`
+4. Your browser opens to `http://127.0.0.1:5005`
+5. Follow the [Quick Start Guide](./docs/QuickStart.md) to create your first video
+
+**No installation, no setup, just extract and go!**
+
+### For Developers
+
+**Development (Linux/Windows):**
 ```bash
 # Start API backend
 cd Aura.Api && dotnet run
@@ -45,25 +58,84 @@ cd Aura.Web && npm install && npm run dev
 # Open http://localhost:5173
 ```
 
-### Building Portable Distribution (Windows)
+**Build Portable Distribution (Windows):**
 ```powershell
-# Build portable ZIP (recommended)
+# Build portable ZIP
 .\scripts\packaging\build-portable.ps1
 
-# Output: Portable ZIP in artifacts/portable/
+# Output: artifacts/portable/AuraVideoStudio_Portable_x64_[version].zip
 ```
 
 For detailed build instructions, see [INSTALL.md](./INSTALL.md)
 
-**See detailed documentation:**
-- [INSTALL.md](./INSTALL.md) - **Build and installation guide**
-- [LOCAL_PROVIDERS_SETUP.md](./LOCAL_PROVIDERS_SETUP.md) - **How to set up local AI providers (Stable Diffusion, Ollama, FFmpeg)**
-- [PORTABLE.md](./PORTABLE.md) - **User guide for portable version**
-- [IMPLEMENTATION_SUMMARY.md](./IMPLEMENTATION_SUMMARY.md) - Original implementation details
+## 📚 User Documentation
+
+**Getting Started:**
+- [**Quick Start Guide**](./docs/QuickStart.md) - Create your first video in minutes
+- [**Troubleshooting**](./docs/Troubleshooting.md) - Fix common issues and errors
+- [**Keyboard Shortcuts**](./docs/KeyboardShortcuts.md) - Master efficient editing controls
+- [PORTABLE.md](./PORTABLE.md) - Portable version setup and usage
+
+**Configuration & Setup:**
+- [LOCAL_PROVIDERS_SETUP.md](./LOCAL_PROVIDERS_SETUP.md) - Set up local AI providers (Stable Diffusion, Ollama, FFmpeg)
+- [INSTALL.md](./INSTALL.md) - Build and installation guide
+
+**Technical Documentation:**
 - [ARCHITECTURE.md](./ARCHITECTURE.md) - Complete architecture overview
+- [IMPLEMENTATION_SUMMARY.md](./IMPLEMENTATION_SUMMARY.md) - Implementation details
 - [Aura.Api/README.md](./Aura.Api/README.md) - Backend API documentation
 - [Aura.Web/README.md](./Aura.Web/README.md) - Frontend UI documentation
 - [scripts/packaging/README.md](./scripts/packaging/README.md) - Packaging guide
+
+## 🎯 Distribution
+
+**Aura Video Studio is distributed as a portable application:**
+- ✅ **No installation required** - just extract and run
+- ✅ **Self-contained** - all dependencies included
+- ✅ **Privacy-focused** - runs entirely on your local machine
+- ✅ **Windows 10/11 only** (64-bit)
+
+**Download**: Check [Releases](../../releases) for the latest portable ZIP.
+
+## 🔌 Supported Providers
+
+### Free Providers (No API Keys Required)
+- **Script Generation**: Rule-based LLM (built-in)
+- **Text-to-Speech**: Windows TTS (system voices)
+- **Images**: Stock photos (Pixabay, Pexels, Unsplash)
+- **Video Encoding**: FFmpeg (included)
+
+### Optional Pro Providers (API Key Required)
+- **Script Generation**: OpenAI GPT-4, Google Gemini, Azure OpenAI
+- **Text-to-Speech**: ElevenLabs, PlayHT
+- **Images**: DALL-E, Midjourney (via API)
+
+### Local AI Providers (Requires Setup)
+- **Script Generation**: Ollama (local LLM)
+- **Images**: Stable Diffusion WebUI (NVIDIA GPU 6GB+ VRAM required)
+- **Video**: FFmpeg (configured paths)
+
+**Configuration**: All providers are configured in Settings → API Keys or Local Providers.
+
+## 🔒 Privacy & Data
+
+**Privacy by Default:**
+- ✅ **No telemetry** - we don't collect any usage data
+- ✅ **No account required** - works completely offline
+- ✅ **Local processing** - your content stays on your machine
+- ✅ **API keys stored locally** - encrypted with Windows DPAPI
+- ✅ **No cloud dependencies** - free providers work offline
+
+**Data Storage:**
+- Project files: `%USERPROFILE%\Videos\AuraVideoStudio\`
+- Configuration: `%LOCALAPPDATA%\Aura\`
+- Cache: `%LOCALAPPDATA%\Aura\cache\`
+- Logs: `logs/` directory (not uploaded anywhere)
+
+**When You Choose Pro Providers:**
+- Your content is sent to the respective API service (OpenAI, ElevenLabs, etc.)
+- Subject to their terms of service and privacy policies
+- We recommend reviewing each provider's data handling practices
 
 ---
 
