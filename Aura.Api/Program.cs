@@ -3,6 +3,7 @@ using Aura.Core.Models;
 using Aura.Core.Orchestrator;
 using Aura.Core.Providers;
 using Aura.Providers.Llm;
+using Aura.Providers.Planner;
 using Aura.Providers.Tts;
 using Aura.Providers.Video;
 using Microsoft.AspNetCore.Mvc;
@@ -48,6 +49,7 @@ builder.Services.AddCors(options =>
 builder.Services.AddSingleton<HardwareDetector>();
 builder.Services.AddSingleton<Aura.Core.Configuration.ProviderSettings>();
 builder.Services.AddSingleton<ILlmProvider, RuleBasedLlmProvider>();
+builder.Services.AddSingleton<IRecommendationEngine, HeuristicRecommendationEngine>();
 builder.Services.AddSingleton<ITtsProvider, WindowsTtsProvider>();
 builder.Services.AddSingleton<IVideoComposer>(sp => 
 {
@@ -274,6 +276,114 @@ apiGroup.MapPost("/tts", async ([FromBody] TtsRequest request, ITtsProvider ttsP
     }
 })
 .WithName("SynthesizeAudio")
+.WithOpenApi();
+
+// Planner recommendations endpoint
+apiGroup.MapPost("/planner/recommendations", async (
+    [FromBody] PlannerRecommendationRequest request,
+    IRecommendationEngine recommendationEngine,
+    CancellationToken ct) =>
+{
+    try
+    {
+        // Validate required fields
+        if (string.IsNullOrWhiteSpace(request.Topic))
+        {
+            return Results.Problem(
+                detail: "Topic is required",
+                statusCode: 400,
+                title: "Invalid Brief",
+                type: "https://docs.aura.studio/errors/E401");
+        }
+        
+        if (request.TargetDurationMinutes <= 0 || request.TargetDurationMinutes > 120)
+        {
+            return Results.Problem(
+                detail: "Target duration must be between 0 and 120 minutes",
+                statusCode: 400,
+                title: "Invalid Plan",
+                type: "https://docs.aura.studio/errors/E402");
+        }
+        
+        var brief = new Brief(
+            Topic: request.Topic,
+            Audience: request.Audience,
+            Goal: request.Goal,
+            Tone: request.Tone ?? "Informative",
+            Language: request.Language ?? "en-US",
+            Aspect: request.Aspect ?? Aspect.Widescreen16x9
+        );
+        
+        var planSpec = new PlanSpec(
+            TargetDuration: TimeSpan.FromMinutes(request.TargetDurationMinutes),
+            Pacing: request.Pacing ?? Pacing.Conversational,
+            Density: request.Density ?? Density.Balanced,
+            Style: request.Style ?? "Standard"
+        );
+        
+        AudiencePersona? persona = null;
+        if (!string.IsNullOrWhiteSpace(request.PersonaName))
+        {
+            persona = new AudiencePersona(
+                Name: request.PersonaName,
+                Demographics: request.PersonaDemographics,
+                Interests: request.PersonaInterests,
+                ExpertiseLevel: request.PersonaExpertiseLevel
+            );
+        }
+        
+        PlanConstraints? constraints = null;
+        if (request.MaxDurationMinutes.HasValue || request.MinDurationMinutes.HasValue ||
+            request.MustBeOffline.HasValue || !string.IsNullOrWhiteSpace(request.PreferredLanguage))
+        {
+            constraints = new PlanConstraints(
+                MaxDuration: request.MaxDurationMinutes.HasValue 
+                    ? TimeSpan.FromMinutes(request.MaxDurationMinutes.Value) 
+                    : null,
+                MinDuration: request.MinDurationMinutes.HasValue 
+                    ? TimeSpan.FromMinutes(request.MinDurationMinutes.Value) 
+                    : null,
+                MustBeOffline: request.MustBeOffline,
+                PreferredLanguage: request.PreferredLanguage
+            );
+        }
+        
+        Log.Information("Generating recommendations for topic: {Topic}", request.Topic);
+        var recommendations = await recommendationEngine.GenerateRecommendationsAsync(
+            brief, planSpec, persona, constraints, ct);
+        
+        Log.Information("Recommendations generated successfully");
+        return Results.Ok(new { success = true, recommendations });
+    }
+    catch (ArgumentException ex)
+    {
+        Log.Error(ex, "Invalid argument for recommendations");
+        return Results.Problem(
+            detail: ex.Message,
+            statusCode: 400,
+            title: "Invalid Request",
+            type: "https://docs.aura.studio/errors/E403");
+    }
+    catch (TaskCanceledException)
+    {
+        Log.Warning("Recommendation generation was cancelled");
+        return Results.Problem(
+            detail: "Recommendation generation was cancelled",
+            statusCode: 408,
+            title: "Request Timeout",
+            type: "https://docs.aura.studio/errors/E404");
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "Error generating recommendations: {Message}", ex.Message);
+        return Results.Problem(
+            detail: $"Error generating recommendations: {ex.Message}",
+            statusCode: 500,
+            title: "Recommendation Engine Failed",
+            type: "https://docs.aura.studio/errors/E400");
+    }
+})
+.WithName("GenerateRecommendations")
 .WithOpenApi();
 
 // Downloads manifest endpoint
@@ -780,6 +890,9 @@ if (Directory.Exists(wwwrootPath))
 
 app.Run();
 
+// Make Program accessible for integration tests
+public partial class Program { }
+
 // DTOs
 record PlanRequest(double TargetDurationMinutes, Pacing Pacing, Density Density, string Style);
 record ScriptRequest(string Topic, string Audience, string Goal, string Tone, string Language, Aspect Aspect, double TargetDurationMinutes, Pacing Pacing, Density Density, string Style);
@@ -792,3 +905,23 @@ record ApplyProfileRequest(string ProfileName);
 record ApiKeysRequest(string? OpenAiKey, string? ElevenLabsKey, string? PexelsKey, string? StabilityAiKey);
 record ProviderPathsRequest(string? StableDiffusionUrl, string? OllamaUrl, string? FfmpegPath, string? FfprobePath, string? OutputDirectory);
 record ProviderTestRequest(string? Url, string? Path);
+record PlannerRecommendationRequest(
+    string Topic,
+    string? Audience,
+    string? Goal,
+    string? Tone,
+    string? Language,
+    Aspect? Aspect,
+    double TargetDurationMinutes,
+    Pacing? Pacing,
+    Density? Density,
+    string? Style,
+    string? PersonaName,
+    string? PersonaDemographics,
+    string? PersonaInterests,
+    string? PersonaExpertiseLevel,
+    double? MaxDurationMinutes,
+    double? MinDurationMinutes,
+    bool? MustBeOffline,
+    string? PreferredLanguage
+);

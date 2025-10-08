@@ -32,6 +32,16 @@ public interface IStockProvider
     Task<IReadOnlyList<Asset>> SearchAsync(string query, int count, CancellationToken ct);
 }
 
+public interface IRecommendationEngine
+{
+    Task<PlanRecommendations> GenerateRecommendationsAsync(
+        Brief brief,
+        PlanSpec planSpec,
+        AudiencePersona? persona,
+        PlanConstraints? constraints,
+        CancellationToken ct);
+}
+
 public record VisualSpec(string Style, Aspect Aspect, string[] Keywords);
 
 public record Timeline(

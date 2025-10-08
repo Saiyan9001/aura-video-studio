@@ -53,3 +53,50 @@ public record HardwareOverrides
 }
 
 public record GpuInfo(string Vendor, string Model, int VramGB, string? Series);
+
+/// <summary>
+/// Persona of the target audience for content recommendations
+/// </summary>
+public record AudiencePersona(string? Name, string? Demographics, string? Interests, string? ExpertiseLevel);
+
+/// <summary>
+/// Constraints for plan recommendations (e.g., time limits, resource limits)
+/// </summary>
+public record PlanConstraints(
+    TimeSpan? MaxDuration,
+    TimeSpan? MinDuration,
+    bool? MustBeOffline,
+    string? PreferredLanguage
+);
+
+/// <summary>
+/// Comprehensive recommendations for video production
+/// </summary>
+public record PlanRecommendations
+{
+    public string Outline { get; init; } = "";
+    public int SceneCount { get; init; }
+    public int ShotsPerScene { get; init; }
+    public double BRollPercentage { get; init; }  // 0-100
+    public double OverlayDensity { get; init; }  // 0-1
+    public string ReadingLevel { get; init; } = "";
+    public double VoiceRate { get; init; }  // 0.5-2.0
+    public double VoicePitch { get; init; }  // -20 to +20
+    public string MusicTempoCurve { get; init; } = "";
+    public string MusicIntensityCurve { get; init; } = "";
+    public string CaptionStyle { get; init; } = "";
+    public string ThumbnailPrompt { get; init; } = "";
+    public string SeoTitle { get; init; } = "";
+    public string SeoDescription { get; init; } = "";
+    public List<string> SeoTags { get; init; } = new();
+}
+
+/// <summary>
+/// Input for generating recommendations
+/// </summary>
+public record RecommendationRequest(
+    Brief Brief,
+    PlanSpec PlanSpec,
+    AudiencePersona? Persona,
+    PlanConstraints? Constraints
+);
