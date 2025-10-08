@@ -15,6 +15,7 @@ import {
 } from '@fluentui/react-components';
 import { Play24Regular } from '@fluentui/react-icons';
 import type { Brief, PlanSpec } from '../types';
+import { normalizeDensity, normalizeAspect } from '../types';
 
 const useStyles = makeStyles({
   container: {
@@ -75,6 +76,10 @@ export function CreatePage() {
   const handleGenerate = async () => {
     setGenerating(true);
     try {
+      // Normalize enum values to ensure compatibility
+      const normalizedDensity = normalizeDensity(planSpec.density || 'Balanced');
+      const normalizedAspect = normalizeAspect(brief.aspect || 'Widescreen16x9');
+      
       // Call API to generate video
       const response = await fetch('/api/script', {
         method: 'POST',
@@ -85,10 +90,10 @@ export function CreatePage() {
           goal: brief.goal,
           tone: brief.tone,
           language: brief.language,
-          aspect: brief.aspect,
+          aspect: normalizedAspect,
           targetDurationMinutes: planSpec.targetDurationMinutes,
           pacing: planSpec.pacing,
-          density: planSpec.density,
+          density: normalizedDensity,
           style: planSpec.style,
         }),
       });
