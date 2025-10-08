@@ -109,13 +109,12 @@ public class WindowsTtsProvider : ITtsProvider
                 line.Text.Length > 30 ? line.Text.Substring(0, 30) + "..." : line.Text);
         }
         
-        // Combine all audio files into one (would use NAudio in a real implementation)
+        // Combine all audio files into one
         _logger.LogInformation("Synthesized {Count} lines, combining into final output", lineOutputs.Count);
         
-        // Here we'd use NAudio to combine the WAV files, but for this example we'll just use the first file
         if (lineOutputs.Count > 0)
         {
-            File.Copy(lineOutputs[0], outputFilePath, true);
+            await MergeWavFilesAsync(lineOutputs, outputFilePath, ct);
         }
         
         // Clean up temp files
@@ -146,6 +145,151 @@ public class WindowsTtsProvider : ITtsProvider
     }
     
 #if WINDOWS10_0_19041_0_OR_GREATER
+    private async Task MergeWavFilesAsync(List<string> inputFiles, string outputFile, CancellationToken ct)
+    {
+        if (inputFiles.Count == 0)
+        {
+            throw new ArgumentException("No input files to merge");
+        }
+        
+        if (inputFiles.Count == 1)
+        {
+            File.Copy(inputFiles[0], outputFile, true);
+            return;
+        }
+        
+        _logger.LogInformation("Merging {Count} WAV files into master narration track", inputFiles.Count);
+        
+        // Read WAV headers from first file to get format info
+        using var firstFile = new FileStream(inputFiles[0], FileMode.Open, FileAccess.Read);
+        using var reader = new BinaryReader(firstFile);
+        
+        // Read RIFF header
+        var riffId = new string(reader.ReadChars(4));
+        if (riffId != "RIFF")
+        {
+            throw new InvalidDataException("Invalid WAV file format");
+        }
+        
+        reader.ReadInt32(); // File size (will recalculate)
+        var waveId = new string(reader.ReadChars(4));
+        if (waveId != "WAVE")
+        {
+            throw new InvalidDataException("Invalid WAV file format");
+        }
+        
+        // Read fmt chunk
+        var fmtId = new string(reader.ReadChars(4));
+        if (fmtId != "fmt ")
+        {
+            throw new InvalidDataException("Invalid WAV file format");
+        }
+        
+        int fmtSize = reader.ReadInt32();
+        var fmtData = reader.ReadBytes(fmtSize);
+        
+        // Calculate total data size from all files
+        long totalDataSize = 0;
+        foreach (var file in inputFiles)
+        {
+            ct.ThrowIfCancellationRequested();
+            totalDataSize += GetWavDataSize(file);
+        }
+        
+        // Write merged WAV file
+        using var outputStream = new FileStream(outputFile, FileMode.Create, FileAccess.Write);
+        using var writer = new BinaryWriter(outputStream);
+        
+        // Write RIFF header
+        writer.Write(new[] { 'R', 'I', 'F', 'F' });
+        writer.Write((int)(36 + totalDataSize)); // File size - 8
+        writer.Write(new[] { 'W', 'A', 'V', 'E' });
+        
+        // Write fmt chunk
+        writer.Write(new[] { 'f', 'm', 't', ' ' });
+        writer.Write(fmtSize);
+        writer.Write(fmtData);
+        
+        // Write data chunk header
+        writer.Write(new[] { 'd', 'a', 't', 'a' });
+        writer.Write((int)totalDataSize);
+        
+        // Copy audio data from all files
+        foreach (var file in inputFiles)
+        {
+            ct.ThrowIfCancellationRequested();
+            await CopyWavDataAsync(file, writer, ct);
+        }
+        
+        _logger.LogInformation("Merged WAV file created: {Size} bytes", outputStream.Length);
+    }
+    
+    private long GetWavDataSize(string wavFile)
+    {
+        using var file = new FileStream(wavFile, FileMode.Open, FileAccess.Read);
+        using var reader = new BinaryReader(file);
+        
+        // Skip RIFF header (12 bytes)
+        reader.ReadBytes(12);
+        
+        // Find data chunk
+        while (file.Position < file.Length)
+        {
+            var chunkId = new string(reader.ReadChars(4));
+            int chunkSize = reader.ReadInt32();
+            
+            if (chunkId == "data")
+            {
+                return chunkSize;
+            }
+            
+            // Skip this chunk
+            reader.ReadBytes(chunkSize);
+        }
+        
+        throw new InvalidDataException("No data chunk found in WAV file");
+    }
+    
+    private async Task CopyWavDataAsync(string wavFile, BinaryWriter writer, CancellationToken ct)
+    {
+        using var file = new FileStream(wavFile, FileMode.Open, FileAccess.Read);
+        using var reader = new BinaryReader(file);
+        
+        // Skip RIFF header (12 bytes)
+        reader.ReadBytes(12);
+        
+        // Find data chunk
+        while (file.Position < file.Length)
+        {
+            var chunkId = new string(reader.ReadChars(4));
+            int chunkSize = reader.ReadInt32();
+            
+            if (chunkId == "data")
+            {
+                // Copy audio data
+                const int bufferSize = 81920;
+                byte[] buffer = new byte[bufferSize];
+                int remaining = chunkSize;
+                
+                while (remaining > 0)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    int toRead = Math.Min(remaining, bufferSize);
+                    int read = await file.ReadAsync(buffer.AsMemory(0, toRead), ct);
+                    if (read == 0) break;
+                    
+                    writer.Write(buffer, 0, read);
+                    remaining -= read;
+                }
+                
+                return;
+            }
+            
+            // Skip this chunk
+            reader.ReadBytes(chunkSize);
+        }
+    }
+    
     private string CreateSsml(string text, VoiceSpec spec)
     {
         // Format text with SSML tags including prosody adjustments
