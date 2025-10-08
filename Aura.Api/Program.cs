@@ -298,8 +298,8 @@ apiGroup.MapGet("/downloads/{component}/status", async (string component, Aura.C
 {
     try
     {
-        var isInstalled = await depManager.IsComponentInstalledAsync(component);
-        return Results.Ok(new { component, isInstalled });
+        var status = await depManager.GetComponentStatusAsync(component);
+        return Results.Ok(status);
     }
     catch (Exception ex)
     {
@@ -332,6 +332,105 @@ apiGroup.MapPost("/downloads/{component}/install", async (string component, Aura
     }
 })
 .WithName("InstallComponent")
+.WithOpenApi();
+
+// Repair component
+apiGroup.MapPost("/downloads/{component}/repair", async (string component, Aura.Core.Dependencies.DependencyManager depManager, CancellationToken ct) =>
+{
+    try
+    {
+        var progress = new Progress<Aura.Core.Dependencies.DownloadProgress>(p =>
+        {
+            Log.Information("Repair progress: {Component} - {Percent}%", component, p.PercentComplete);
+        });
+
+        await depManager.RepairComponentAsync(component, progress, ct);
+        
+        return Results.Ok(new { success = true, message = $"{component} repaired successfully" });
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "Error repairing component");
+        return Results.Problem($"Error repairing {component}", statusCode: 500);
+    }
+})
+.WithName("RepairComponent")
+.WithOpenApi();
+
+// Remove component
+apiGroup.MapDelete("/downloads/{component}", async (string component, Aura.Core.Dependencies.DependencyManager depManager) =>
+{
+    try
+    {
+        var success = await depManager.RemoveComponentAsync(component);
+        
+        if (success)
+        {
+            return Results.Ok(new { success = true, message = $"{component} removed successfully" });
+        }
+        else
+        {
+            return Results.Problem($"Failed to remove some files for {component}", statusCode: 500);
+        }
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "Error removing component");
+        return Results.Problem($"Error removing {component}", statusCode: 500);
+    }
+})
+.WithName("RemoveComponent")
+.WithOpenApi();
+
+// Get download directory path
+apiGroup.MapGet("/downloads/directory", (Aura.Core.Dependencies.DependencyManager depManager) =>
+{
+    try
+    {
+        var directory = depManager.GetComponentDirectory();
+        return Results.Ok(new { directory });
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "Error getting download directory");
+        return Results.Problem("Error getting download directory", statusCode: 500);
+    }
+})
+.WithName("GetDownloadDirectory")
+.WithOpenApi();
+
+// Get manual install instructions (offline mode)
+apiGroup.MapGet("/downloads/{component}/manual-instructions", async (string component, Aura.Core.Dependencies.DependencyManager depManager) =>
+{
+    try
+    {
+        var instructions = await depManager.GetManualInstallInstructionsAsync(component);
+        return Results.Ok(instructions);
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "Error getting manual install instructions");
+        return Results.Problem($"Error getting manual install instructions for {component}", statusCode: 500);
+    }
+})
+.WithName("GetManualInstallInstructions")
+.WithOpenApi();
+
+// Verify manual install
+apiGroup.MapPost("/downloads/{component}/verify", async (string component, Aura.Core.Dependencies.DependencyManager depManager) =>
+{
+    try
+    {
+        var result = await depManager.VerifyManualInstallAsync(component);
+        return Results.Ok(result);
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "Error verifying manual install");
+        return Results.Problem($"Error verifying manual install for {component}", statusCode: 500);
+    }
+})
+.WithName("VerifyManualInstall")
 .WithOpenApi();
 
 // Settings endpoints

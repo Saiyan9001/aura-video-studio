@@ -4,6 +4,7 @@ import {
   tokens,
   Title1,
   Title2,
+  Title3,
   Text,
   Button,
   Card,
@@ -15,11 +16,28 @@ import {
   TableCell,
   Spinner,
   Badge,
+  Menu,
+  MenuTrigger,
+  MenuPopover,
+  MenuList,
+  MenuItem,
+  Dialog,
+  DialogTrigger,
+  DialogSurface,
+  DialogTitle,
+  DialogBody,
+  DialogActions,
+  DialogContent,
 } from '@fluentui/react-components';
 import { 
   CloudArrowDown24Regular, 
   CheckmarkCircle24Filled,
   ErrorCircle24Filled,
+  MoreVertical20Regular,
+  Wrench24Regular,
+  Delete24Regular,
+  FolderOpen24Regular,
+  DocumentText24Regular,
 } from '@fluentui/react-icons';
 
 interface DependencyComponent {
@@ -36,11 +54,32 @@ interface DependencyComponent {
 }
 
 interface ComponentStatus {
+  name: string;
+  isInstalled: boolean;
+  needsRepair: boolean;
+  errorMessage?: string;
+}
+
+interface ComponentStatusState {
   [key: string]: {
-    isInstalled: boolean;
+    status: ComponentStatus | null;
     isInstalling: boolean;
     error?: string;
   };
+}
+
+interface ManualInstructions {
+  componentName: string;
+  version: string;
+  targetDirectory: string;
+  files: Array<{
+    filename: string;
+    url: string;
+    sha256: string;
+    sizeBytes: number;
+    installPath: string;
+  }>;
+  instructions: string;
 }
 
 const useStyles = makeStyles({
@@ -71,13 +110,33 @@ const useStyles = makeStyles({
     flexDirection: 'column',
     gap: tokens.spacingVerticalXXS,
   },
+  actionsCell: {
+    display: 'flex',
+    gap: tokens.spacingHorizontalS,
+    alignItems: 'center',
+  },
+  dialogContent: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: tokens.spacingVerticalM,
+  },
+  instructionBox: {
+    padding: tokens.spacingVerticalM,
+    backgroundColor: tokens.colorNeutralBackground3,
+    borderRadius: tokens.borderRadiusMedium,
+    fontFamily: 'monospace',
+    fontSize: '12px',
+  },
 });
 
 export function DownloadsPage() {
   const styles = useStyles();
   const [manifest, setManifest] = useState<DependencyComponent[]>([]);
   const [loading, setLoading] = useState(true);
-  const [componentStatus, setComponentStatus] = useState<ComponentStatus>({});
+  const [componentStatus, setComponentStatus] = useState<ComponentStatusState>({});
+  const [offlineMode, setOfflineMode] = useState(false);
+  const [manualInstructions, setManualInstructions] = useState<ManualInstructions | null>(null);
+  const [showInstructionsDialog, setShowInstructionsDialog] = useState(false);
 
   useEffect(() => {
     fetchManifest();
@@ -112,7 +171,7 @@ export function DownloadsPage() {
         setComponentStatus(prev => ({
           ...prev,
           [componentName]: {
-            isInstalled: data.isInstalled,
+            status: data,
             isInstalling: false,
           },
         }));
@@ -128,7 +187,7 @@ export function DownloadsPage() {
       setComponentStatus(prev => ({
         ...prev,
         [componentName]: {
-          isInstalled: false,
+          status: prev[componentName]?.status || null,
           isInstalling: true,
         },
       }));
@@ -138,20 +197,14 @@ export function DownloadsPage() {
       });
 
       if (response.ok) {
-        // Update status to installed
-        setComponentStatus(prev => ({
-          ...prev,
-          [componentName]: {
-            isInstalled: true,
-            isInstalling: false,
-          },
-        }));
+        // Refresh status
+        await checkComponentStatus(componentName);
       } else {
         const errorData = await response.json();
         setComponentStatus(prev => ({
           ...prev,
           [componentName]: {
-            isInstalled: false,
+            status: prev[componentName]?.status || null,
             isInstalling: false,
             error: errorData.message || 'Installation failed',
           },
@@ -162,7 +215,7 @@ export function DownloadsPage() {
       setComponentStatus(prev => ({
         ...prev,
         [componentName]: {
-          isInstalled: false,
+          status: prev[componentName]?.status || null,
           isInstalling: false,
           error: 'Network error',
         },
@@ -170,14 +223,125 @@ export function DownloadsPage() {
     }
   };
 
+  const repairComponent = async (componentName: string) => {
+    try {
+      setComponentStatus(prev => ({
+        ...prev,
+        [componentName]: {
+          status: prev[componentName]?.status || null,
+          isInstalling: true,
+        },
+      }));
+
+      const response = await fetch(`/api/downloads/${componentName}/repair`, {
+        method: 'POST',
+      });
+
+      if (response.ok) {
+        await checkComponentStatus(componentName);
+      } else {
+        const errorData = await response.json();
+        setComponentStatus(prev => ({
+          ...prev,
+          [componentName]: {
+            status: prev[componentName]?.status || null,
+            isInstalling: false,
+            error: errorData.message || 'Repair failed',
+          },
+        }));
+      }
+    } catch (error) {
+      console.error(`Error repairing ${componentName}:`, error);
+      setComponentStatus(prev => ({
+        ...prev,
+        [componentName]: {
+          status: prev[componentName]?.status || null,
+          isInstalling: false,
+          error: 'Network error',
+        },
+      }));
+    }
+  };
+
+  const removeComponent = async (componentName: string) => {
+    if (!confirm(`Are you sure you want to remove ${componentName}?`)) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/downloads/${componentName}`, {
+        method: 'DELETE',
+      });
+
+      if (response.ok) {
+        await checkComponentStatus(componentName);
+      } else {
+        alert('Failed to remove component');
+      }
+    } catch (error) {
+      console.error(`Error removing ${componentName}:`, error);
+      alert('Network error');
+    }
+  };
+
+  const openFolder = async () => {
+    try {
+      const response = await fetch('/api/downloads/directory');
+      if (response.ok) {
+        const data = await response.json();
+        alert(`Download directory: ${data.directory}\n\nNote: You can open this folder manually from your file explorer.`);
+      }
+    } catch (error) {
+      console.error('Error getting directory:', error);
+    }
+  };
+
+  const showManualInstructions = async (componentName: string) => {
+    try {
+      const response = await fetch(`/api/downloads/${componentName}/manual-instructions`);
+      if (response.ok) {
+        const data = await response.json();
+        setManualInstructions(data);
+        setShowInstructionsDialog(true);
+      }
+    } catch (error) {
+      console.error(`Error getting manual instructions for ${componentName}:`, error);
+    }
+  };
+
+  const verifyManualInstall = async (componentName: string) => {
+    try {
+      const response = await fetch(`/api/downloads/${componentName}/verify`, {
+        method: 'POST',
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        if (result.isValid) {
+          alert(`✓ All files verified successfully for ${componentName}`);
+          await checkComponentStatus(componentName);
+        } else {
+          const failedFiles = result.files
+            .filter((f: any) => !f.isValid)
+            .map((f: any) => `${f.filename}: ${f.errorMessage}`)
+            .join('\n');
+          alert(`Verification failed:\n\n${failedFiles}`);
+        }
+      }
+    } catch (error) {
+      console.error(`Error verifying ${componentName}:`, error);
+      alert('Network error');
+    }
+  };
+
   const getStatusDisplay = (componentName: string) => {
-    const status = componentStatus[componentName];
+    const statusData = componentStatus[componentName];
     
-    if (!status) {
+    if (!statusData || !statusData.status) {
       return <Spinner size="tiny" />;
     }
     
-    if (status.isInstalling) {
+    if (statusData.isInstalling) {
       return (
         <div className={styles.statusCell}>
           <Spinner size="tiny" />
@@ -186,11 +350,22 @@ export function DownloadsPage() {
       );
     }
     
-    if (status.error) {
+    const status = statusData.status;
+    
+    if (statusData.error) {
       return (
         <div className={styles.statusCell}>
           <ErrorCircle24Filled color={tokens.colorPaletteRedForeground1} />
-          <Text>{status.error}</Text>
+          <Text>{statusData.error}</Text>
+        </div>
+      );
+    }
+    
+    if (status.needsRepair) {
+      return (
+        <div className={styles.statusCell}>
+          <ErrorCircle24Filled color={tokens.colorPaletteYellowForeground1} />
+          <Badge color="warning" appearance="filled">Needs Repair</Badge>
         </div>
       );
     }
@@ -217,6 +392,40 @@ export function DownloadsPage() {
           Manage dependencies and external tools required for video production
         </Text>
       </div>
+
+      <Card className={styles.card} style={{ marginBottom: tokens.spacingVerticalL }}>
+        <div style={{ display: 'flex', gap: tokens.spacingHorizontalM, justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ flex: 1 }}>
+            <Title2>Download Mode</Title2>
+            <Text>
+              {offlineMode 
+                ? 'Offline mode: Manual placement instructions with checksum verification'
+                : 'Online mode: Automatic downloads with resume support'}
+            </Text>
+          </div>
+          <div style={{ display: 'flex', gap: tokens.spacingHorizontalM }}>
+            <Button
+              appearance={offlineMode ? 'outline' : 'primary'}
+              onClick={() => setOfflineMode(false)}
+            >
+              Online
+            </Button>
+            <Button
+              appearance={offlineMode ? 'primary' : 'outline'}
+              onClick={() => setOfflineMode(true)}
+            >
+              Offline
+            </Button>
+            <Button
+              appearance="subtle"
+              icon={<FolderOpen24Regular />}
+              onClick={openFolder}
+            >
+              Open Folder
+            </Button>
+          </div>
+        </div>
+      </Card>
 
       <Card className={styles.card} style={{ marginBottom: tokens.spacingVerticalL, backgroundColor: tokens.colorNeutralBackground3 }}>
         <div style={{ display: 'flex', gap: tokens.spacingHorizontalM, alignItems: 'flex-start' }}>
@@ -251,7 +460,8 @@ export function DownloadsPage() {
               <TableBody>
                 {manifest.map((component) => {
                   const totalSize = component.files.reduce((sum, file) => sum + file.sizeBytes, 0);
-                  const status = componentStatus[component.name];
+                  const statusData = componentStatus[component.name];
+                  const status = statusData?.status;
                   
                   return (
                     <TableRow key={component.name}>
@@ -275,25 +485,81 @@ export function DownloadsPage() {
                         {getStatusDisplay(component.name)}
                       </TableCell>
                       <TableCell>
-                        {status?.isInstalled ? (
-                          <Button
-                            size="small"
-                            appearance="subtle"
-                            disabled
-                          >
-                            Installed
-                          </Button>
-                        ) : (
-                          <Button
-                            size="small"
-                            appearance="primary"
-                            icon={<CloudArrowDown24Regular />}
-                            onClick={() => installComponent(component.name)}
-                            disabled={status?.isInstalling}
-                          >
-                            {status?.isInstalling ? 'Installing...' : 'Install'}
-                          </Button>
-                        )}
+                        <div className={styles.actionsCell}>
+                          {offlineMode ? (
+                            <>
+                              <Button
+                                size="small"
+                                appearance="primary"
+                                icon={<DocumentText24Regular />}
+                                onClick={() => showManualInstructions(component.name)}
+                              >
+                                Instructions
+                              </Button>
+                              {status?.isInstalled && (
+                                <Button
+                                  size="small"
+                                  appearance="outline"
+                                  onClick={() => verifyManualInstall(component.name)}
+                                >
+                                  Verify
+                                </Button>
+                              )}
+                            </>
+                          ) : (
+                            <>
+                              {!status?.isInstalled && !status?.needsRepair && (
+                                <Button
+                                  size="small"
+                                  appearance="primary"
+                                  icon={<CloudArrowDown24Regular />}
+                                  onClick={() => installComponent(component.name)}
+                                  disabled={statusData?.isInstalling}
+                                >
+                                  {statusData?.isInstalling ? 'Installing...' : 'Install'}
+                                </Button>
+                              )}
+                              {status?.needsRepair && (
+                                <Button
+                                  size="small"
+                                  appearance="primary"
+                                  icon={<Wrench24Regular />}
+                                  onClick={() => repairComponent(component.name)}
+                                  disabled={statusData?.isInstalling}
+                                >
+                                  {statusData?.isInstalling ? 'Repairing...' : 'Repair'}
+                                </Button>
+                              )}
+                              {(status?.isInstalled || status?.needsRepair) && (
+                                <Menu>
+                                  <MenuTrigger disableButtonEnhancement>
+                                    <Button
+                                      size="small"
+                                      appearance="subtle"
+                                      icon={<MoreVertical20Regular />}
+                                    />
+                                  </MenuTrigger>
+                                  <MenuPopover>
+                                    <MenuList>
+                                      <MenuItem
+                                        icon={<Wrench24Regular />}
+                                        onClick={() => repairComponent(component.name)}
+                                      >
+                                        Repair
+                                      </MenuItem>
+                                      <MenuItem
+                                        icon={<Delete24Regular />}
+                                        onClick={() => removeComponent(component.name)}
+                                      >
+                                        Remove
+                                      </MenuItem>
+                                    </MenuList>
+                                  </MenuPopover>
+                                </Menu>
+                              )}
+                            </>
+                          )}
+                        </div>
                       </TableCell>
                     </TableRow>
                   );
@@ -303,6 +569,62 @@ export function DownloadsPage() {
           </div>
         </Card>
       )}
+
+      <Dialog open={showInstructionsDialog} onOpenChange={(_, data) => setShowInstructionsDialog(data.open)}>
+        <DialogSurface>
+          <DialogBody>
+            <DialogTitle>Manual Installation Instructions</DialogTitle>
+            <DialogContent className={styles.dialogContent}>
+              {manualInstructions && (
+                <>
+                  <div>
+                    <Title3>{manualInstructions.componentName} v{manualInstructions.version}</Title3>
+                    <Text>{manualInstructions.instructions}</Text>
+                  </div>
+                  
+                  <div>
+                    <Text weight="semibold">Target Directory:</Text>
+                    <div className={styles.instructionBox}>
+                      {manualInstructions.targetDirectory}
+                    </div>
+                  </div>
+
+                  <div>
+                    <Text weight="semibold">Files to Download:</Text>
+                    {manualInstructions.files.map((file) => (
+                      <div key={file.filename} style={{ marginTop: tokens.spacingVerticalM }}>
+                        <Text weight="semibold">{file.filename}</Text>
+                        <div className={styles.instructionBox}>
+                          <div>URL: {file.url}</div>
+                          <div>Size: {(file.sizeBytes / 1024 / 1024).toFixed(1)} MB</div>
+                          <div>SHA-256: {file.sha256}</div>
+                          <div>Install to: {file.installPath}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </DialogContent>
+            <DialogActions>
+              <Button appearance="secondary" onClick={() => setShowInstructionsDialog(false)}>
+                Close
+              </Button>
+              {manualInstructions && (
+                <Button 
+                  appearance="primary" 
+                  onClick={() => {
+                    setShowInstructionsDialog(false);
+                    verifyManualInstall(manualInstructions.componentName);
+                  }}
+                >
+                  Verify Installation
+                </Button>
+              )}
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
     </div>
   );
 }
