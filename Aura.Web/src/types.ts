@@ -64,3 +64,42 @@ export interface VoiceSpec {
   pitch: number;
   pauseStyle: 'Auto' | 'None' | 'Breathier';
 }
+
+export interface PlanRecommendations {
+  outline: string;
+  sceneCount: number;
+  shotsPerScene: number;
+  bRollPercentage: number;
+  overlayDensity: number;
+  readingLevel: string;
+  voiceRate: number;
+  voicePitch: number;
+  musicTempoCurve: string;
+  musicIntensityCurve: string;
+  captionStyle: string;
+  thumbnailPrompt: string;
+  seoTitle: string;
+  seoDescription: string;
+  seoTags: string[];
+}
+
+export interface RecommendationRequest {
+  topic: string;
+  audience?: string;
+  goal?: string;
+  tone?: string;
+  language?: string;
+  aspect?: 'Widescreen16x9' | 'Vertical9x16' | 'Square1x1';
+  targetDurationMinutes: number;
+  pacing?: 'Chill' | 'Conversational' | 'Fast';
+  density?: 'Sparse' | 'Balanced' | 'Dense';
+  style?: string;
+  personaName?: string;
+  personaDemographics?: string;
+  personaInterests?: string;
+  personaExpertiseLevel?: string;
+  maxDurationMinutes?: number;
+  minDurationMinutes?: number;
+  mustBeOffline?: boolean;
+  preferredLanguage?: string;
+}
