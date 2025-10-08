@@ -12,9 +12,12 @@ import {
   Slider,
   Card,
   Field,
+  MessageBar,
+  MessageBarBody,
 } from '@fluentui/react-components';
-import { Play24Regular } from '@fluentui/react-icons';
-import type { Brief, PlanSpec } from '../types';
+import { Play24Regular, Checkmark20Regular } from '@fluentui/react-icons';
+import type { Brief, PlanSpec, PreflightResult } from '../types';
+import { PreflightModal } from '../components/PreflightModal';
 
 const useStyles = makeStyles({
   container: {
@@ -71,10 +74,37 @@ export function CreatePage() {
   });
 
   const [generating, setGenerating] = useState(false);
+  const [preflightModalOpen, setPreflightModalOpen] = useState(false);
+  const [preflightResult, setPreflightResult] = useState<PreflightResult | null>(null);
+
+  const runPreflightCheck = async (): Promise<boolean> => {
+    try {
+      const response = await fetch('/api/preflight/run', { method: 'POST' });
+      if (response.ok) {
+        const result = await response.json();
+        setPreflightResult(result);
+        return result.ok;
+      }
+      return false;
+    } catch (error) {
+      console.error('Error running preflight check:', error);
+      return false;
+    }
+  };
 
   const handleGenerate = async () => {
     setGenerating(true);
     try {
+      // Run preflight check first
+      const preflightPassed = await runPreflightCheck();
+      
+      if (!preflightPassed) {
+        // Show preflight modal if checks failed
+        setPreflightModalOpen(true);
+        setGenerating(false);
+        return;
+      }
+
       // Call API to generate video
       const response = await fetch('/api/script', {
         method: 'POST',
@@ -219,6 +249,15 @@ export function CreatePage() {
             <Text size={200} style={{ marginBottom: tokens.spacingVerticalL }}>
               Review your settings and generate your video
             </Text>
+            
+            {preflightResult && !preflightResult.ok && (
+              <MessageBar intent="warning" style={{ marginBottom: tokens.spacingVerticalL }}>
+                <MessageBarBody>
+                  Configuration issues detected. Click "Run Preflight Check" to review and fix.
+                </MessageBarBody>
+              </MessageBar>
+            )}
+
             <div style={{ marginTop: tokens.spacingVerticalL, display: 'flex', flexDirection: 'column', gap: tokens.spacingVerticalM }}>
               <div>
                 <Text weight="semibold">Topic:</Text> <Text>{brief.topic}</Text>
@@ -238,6 +277,15 @@ export function CreatePage() {
               <div>
                 <Text weight="semibold">Aspect:</Text> <Text>{brief.aspect}</Text>
               </div>
+            </div>
+
+            <div style={{ marginTop: tokens.spacingVerticalL }}>
+              <Button
+                icon={<Checkmark20Regular />}
+                onClick={() => setPreflightModalOpen(true)}
+              >
+                Run Preflight Check
+              </Button>
             </div>
           </Card>
         )}
@@ -268,6 +316,23 @@ export function CreatePage() {
           )}
         </div>
       </div>
+
+      <PreflightModal
+        open={preflightModalOpen}
+        onOpenChange={setPreflightModalOpen}
+        onAutoSwitchToFreePath={async () => {
+          try {
+            await fetch('/api/profiles/apply', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ profileName: 'Free-Only' }),
+            });
+            alert('Switched to Free-Only profile');
+          } catch (error) {
+            console.error('Error switching profile:', error);
+          }
+        }}
+      />
     </div>
   );
 }

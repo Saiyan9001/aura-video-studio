@@ -64,3 +64,17 @@ export interface VoiceSpec {
   pitch: number;
   pauseStyle: 'Auto' | 'None' | 'Breathier';
 }
+
+export interface PreflightCheck {
+  name: string;
+  ok: boolean;
+  message: string;
+  fixHint?: string;
+  link?: string;
+}
+
+export interface PreflightResult {
+  ok: boolean;
+  correlationId: string;
+  checks: PreflightCheck[];
+}

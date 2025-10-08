@@ -14,8 +14,9 @@ import {
   TabList,
   Slider,
 } from '@fluentui/react-components';
-import { Save24Regular } from '@fluentui/react-icons';
+import { Save24Regular, Checkmark20Regular } from '@fluentui/react-icons';
 import type { Profile } from '../types';
+import { PreflightModal } from '../components/PreflightModal';
 
 const useStyles = makeStyles({
   container: {
@@ -64,6 +65,7 @@ export function SettingsPage() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [offlineMode, setOfflineMode] = useState(false);
   const [settings, setSettings] = useState<any>({});
+  const [preflightModalOpen, setPreflightModalOpen] = useState(false);
   
   // UI Settings state
   const [uiScale, setUiScale] = useState(100);
@@ -340,6 +342,13 @@ export function SettingsPage() {
               }}
             >
               Run Hardware Probes
+            </Button>
+
+            <Button
+              icon={<Checkmark20Regular />}
+              onClick={() => setPreflightModalOpen(true)}
+            >
+              Run Preflight Check
             </Button>
           </div>
         </Card>
@@ -626,6 +635,24 @@ export function SettingsPage() {
           Save Settings
         </Button>
       </div>
+
+      <PreflightModal
+        open={preflightModalOpen}
+        onOpenChange={setPreflightModalOpen}
+        onAutoSwitchToFreePath={async () => {
+          try {
+            await fetch('/api/profiles/apply', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ profileName: 'Free-Only' }),
+            });
+            alert('Switched to Free-Only profile');
+            fetchSettings(); // Refresh settings
+          } catch (error) {
+            console.error('Error switching profile:', error);
+          }
+        }}
+      />
     </div>
   );
 }
