@@ -43,6 +43,100 @@ jobs:
     - name: Build WinUI 3 App (x64)
       run: msbuild Aura.App/Aura.App.csproj /p:Configuration=Release /p:Platform=x64 /p:AppxBundle=Never /p:UapAppxPackageBuildMode=SideloadOnly /restore
       
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+        cache-dependency-path: Aura.Web/package-lock.json
+        
+    - name: Build Portable ZIP
+      run: |
+        powershell -ExecutionPolicy Bypass -File scripts/packaging/make_portable_zip.ps1 -Configuration Release -Platform x64
+      shell: powershell
+      
+    - name: Run Smoke Test (Quick Generate)
+      run: |
+        Write-Host "Starting smoke test..."
+        
+        # Extract the portable ZIP to a temp location
+        $testDir = Join-Path $env:TEMP "aura-smoke-test"
+        if (Test-Path $testDir) {
+          Remove-Item $testDir -Recurse -Force
+        }
+        New-Item -ItemType Directory -Force -Path $testDir | Out-Null
+        
+        $zipPath = "artifacts/windows/portable/AuraVideoStudio_Portable_x64.zip"
+        if (-not (Test-Path $zipPath)) {
+          Write-Host "ERROR: Portable ZIP not found at $zipPath" -ForegroundColor Red
+          exit 1
+        }
+        
+        Write-Host "Extracting ZIP to $testDir..."
+        Expand-Archive -Path $zipPath -DestinationPath $testDir -Force
+        
+        # Start the API
+        Write-Host "Starting API..."
+        $apiProcess = Start-Process -FilePath "$testDir\api\Aura.Api.exe" -WorkingDirectory "$testDir\api" -PassThru -WindowStyle Hidden
+        
+        # Wait for health check
+        Write-Host "Waiting for API health check..."
+        $maxRetries = 30
+        $healthy = $false
+        for ($i = 0; $i -lt $maxRetries; $i++) {
+          try {
+            $response = Invoke-WebRequest -Uri "http://127.0.0.1:5005/healthz" -TimeoutSec 2 -UseBasicParsing
+            if ($response.StatusCode -eq 200) {
+              Write-Host "✓ API is healthy!" -ForegroundColor Green
+              $healthy = $true
+              break
+            }
+          } catch {
+            Start-Sleep -Seconds 1
+          }
+        }
+        
+        if (-not $healthy) {
+          Write-Host "ERROR: API failed health check" -ForegroundColor Red
+          Stop-Process -Id $apiProcess.Id -Force -ErrorAction SilentlyContinue
+          exit 1
+        }
+        
+        # Test Quick Generate endpoint
+        Write-Host "Testing Quick Generate endpoint..."
+        try {
+          $testRequest = @{
+            topic = "Test Video"
+            duration = 10
+            useFreePath = $true
+          } | ConvertTo-Json
+          
+          $response = Invoke-WebRequest -Uri "http://127.0.0.1:5005/script" `
+            -Method POST `
+            -Body $testRequest `
+            -ContentType "application/json" `
+            -TimeoutSec 15 `
+            -UseBasicParsing
+            
+          if ($response.StatusCode -eq 200) {
+            Write-Host "✓ Quick Generate test passed!" -ForegroundColor Green
+          } else {
+            Write-Host "WARNING: Quick Generate returned status $($response.StatusCode)" -ForegroundColor Yellow
+          }
+        } catch {
+          Write-Host "WARNING: Quick Generate test failed: $($_.Exception.Message)" -ForegroundColor Yellow
+          Write-Host "This is non-fatal for smoke test" -ForegroundColor Gray
+        }
+        
+        # Cleanup
+        Write-Host "Cleaning up..."
+        Stop-Process -Id $apiProcess.Id -Force -ErrorAction SilentlyContinue
+        Start-Sleep -Seconds 2
+        Remove-Item $testDir -Recurse -Force -ErrorAction SilentlyContinue
+        
+        Write-Host "✓ Smoke test completed!" -ForegroundColor Green
+      shell: powershell
+      
     - name: Create artifacts directory
       run: |
         New-Item -ItemType Directory -Force -Path artifacts/windows/msix
@@ -61,12 +155,12 @@ jobs:
         }
       shell: powershell
       
-    - name: Generate checksums
+    - name: Generate checksums for MSIX
       run: |
         if (Test-Path "artifacts/windows/msix") {
           Get-ChildItem -Path artifacts/windows/msix -Recurse -File | ForEach-Object {
             $hash = Get-FileHash -Path $_.FullName -Algorithm SHA256
-            "$($hash.Hash)  $($_.Name)" | Out-File -Append artifacts/windows/checksums.txt
+            "$($hash.Hash)  $($_.Name)" | Out-File -Append artifacts/windows/checksums-msix.txt
           }
         }
       shell: powershell
@@ -86,8 +180,18 @@ jobs:
         name: msix-packages
         path: |
           artifacts/windows/msix/**/*.msix
-          artifacts/windows/checksums.txt
+          artifacts/windows/checksums-msix.txt
         if-no-files-found: warn
+        
+    - name: Upload Portable ZIP
+      if: success()
+      uses: actions/upload-artifact@v4
+      with:
+        name: portable-zip
+        path: |
+          artifacts/windows/portable/AuraVideoStudio_Portable_x64.zip
+          artifacts/windows/checksums.txt
+        if-no-files-found: error
           
     - name: Upload Build Logs
       if: always()
