@@ -5,6 +5,8 @@ using Aura.Core.Providers;
 using Aura.Providers.Llm;
 using Aura.Providers.Tts;
 using Aura.Providers.Video;
+using Aura.Api.Serialization;
+using Aura.Api.Middleware;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.FileProviders;
 using Serilog;
@@ -16,6 +18,8 @@ var builder = WebApplication.CreateBuilder(args);
 // Configure JSON options to handle string enum conversion
 builder.Services.ConfigureHttpJsonOptions(options =>
 {
+    options.SerializerOptions.Converters.Add(new TolerantDensityConverter());
+    options.SerializerOptions.Converters.Add(new TolerantAspectConverter());
     options.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
     options.SerializerOptions.PropertyNameCaseInsensitive = true;
 });
@@ -83,6 +87,9 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseCors();
+
+// Add JSON error handling middleware
+app.UseMiddleware<JsonErrorHandlingMiddleware>();
 
 // Serve static files from wwwroot (must be before routing)
 var wwwrootPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");

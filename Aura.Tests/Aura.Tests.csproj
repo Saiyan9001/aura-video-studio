@@ -24,6 +24,7 @@
   <ItemGroup>
     <ProjectReference Include="..\Aura.Core\Aura.Core.csproj" />
     <ProjectReference Include="..\Aura.Providers\Aura.Providers.csproj" />
+    <ProjectReference Include="..\Aura.Api\Aura.Api.csproj" />
   </ItemGroup>
 
 </Project>
