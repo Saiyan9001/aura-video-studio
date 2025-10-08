@@ -167,6 +167,19 @@ public class ProviderMixer
                 FallbackFrom = preferredTier == "Pro" ? "Pro TTS" : null
             };
         }
+        
+        // Linux Mock TTS (for CI environments without Windows)
+        if (availableProviders.ContainsKey("LinuxMock"))
+        {
+            return new ProviderSelection
+            {
+                Stage = stage,
+                SelectedProvider = "LinuxMock",
+                Reason = "Linux Mock TTS - fallback for non-Windows platforms",
+                IsFallback = true,
+                FallbackFrom = "Windows TTS"
+            };
+        }
 
         throw new Exception("No TTS providers available");
     }

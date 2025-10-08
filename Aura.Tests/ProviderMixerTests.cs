@@ -145,6 +145,48 @@ public class ProviderMixerTests
         Assert.True(selection.IsFallback);
         Assert.Equal("Pro TTS", selection.FallbackFrom);
     }
+    
+    [Fact]
+    public void SelectTtsProvider_Should_UseLinuxMockWhenWindowsUnavailable()
+    {
+        // Arrange
+        var config = new ProviderMixingConfig { LogProviderSelection = false };
+        var mixer = new ProviderMixer(NullLogger<ProviderMixer>.Instance, config);
+
+        var providers = new Dictionary<string, ITtsProvider>
+        {
+            ["LinuxMock"] = Mock.Of<ITtsProvider>()
+        };
+
+        // Act
+        var selection = mixer.SelectTtsProvider(providers, "Free");
+
+        // Assert
+        Assert.Equal("LinuxMock", selection.SelectedProvider);
+        Assert.True(selection.IsFallback);
+        Assert.Equal("Windows TTS", selection.FallbackFrom);
+    }
+    
+    [Fact]
+    public void SelectTtsProvider_Should_PreferWindowsOverLinuxMock()
+    {
+        // Arrange
+        var config = new ProviderMixingConfig { LogProviderSelection = false };
+        var mixer = new ProviderMixer(NullLogger<ProviderMixer>.Instance, config);
+
+        var providers = new Dictionary<string, ITtsProvider>
+        {
+            ["Windows"] = Mock.Of<ITtsProvider>(),
+            ["LinuxMock"] = Mock.Of<ITtsProvider>()
+        };
+
+        // Act
+        var selection = mixer.SelectTtsProvider(providers, "Free");
+
+        // Assert
+        Assert.Equal("Windows", selection.SelectedProvider);
+        Assert.False(selection.IsFallback);
+    }
 
     [Fact]
     public void SelectVisualProvider_Should_RequireNvidiaForSD()

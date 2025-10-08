@@ -246,4 +246,140 @@ public class VideoGenerationE2ETests
         Assert.NotEmpty(renderCommand);
         Assert.Contains("libx264", renderCommand);
     }
+    
+    /// <summary>
+    /// Tests the TTS happy path with LinuxMock provider
+    /// </summary>
+    [Fact]
+    public async Task TtsHappyPath_Should_GenerateAudioFromScriptLines()
+    {
+        // Arrange
+        var provider = new Aura.Providers.Tts.LinuxMockTtsProvider(
+            NullLogger<Aura.Providers.Tts.LinuxMockTtsProvider>.Instance);
+        
+        var scriptLines = new System.Collections.Generic.List<ScriptLine>
+        {
+            new ScriptLine(0, "Welcome to our video tutorial.", TimeSpan.FromSeconds(0), TimeSpan.FromSeconds(3)),
+            new ScriptLine(1, "Today we'll learn about video creation.", TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(4)),
+            new ScriptLine(2, "Let's get started!", TimeSpan.FromSeconds(7), TimeSpan.FromSeconds(2))
+        };
+        
+        var voiceSpec = new VoiceSpec(
+            VoiceName: "Mock Voice (English)",
+            Rate: 1.0,
+            Pitch: 0,
+            Pause: PauseStyle.Natural
+        );
+        
+        // Act
+        string audioPath = await provider.SynthesizeAsync(scriptLines, voiceSpec, default);
+        
+        // Assert
+        Assert.NotNull(audioPath);
+        Assert.True(System.IO.File.Exists(audioPath), "Audio file should be created");
+        
+        var fileInfo = new System.IO.FileInfo(audioPath);
+        Assert.True(fileInfo.Length > 0, "Audio file should not be empty");
+        
+        // Cleanup
+        if (System.IO.File.Exists(audioPath))
+        {
+            System.IO.File.Delete(audioPath);
+        }
+    }
+    
+    /// <summary>
+    /// Tests caption generation and linking into timeline
+    /// </summary>
+    [Fact]
+    public void CaptionsHappyPath_Should_GenerateAndLinkIntoTimeline()
+    {
+        // Arrange
+        var timelineBuilder = new Aura.Core.Timeline.TimelineBuilder();
+        var audioProcessor = new Aura.Core.Audio.AudioProcessor(
+            NullLogger<Aura.Core.Audio.AudioProcessor>.Instance);
+        
+        var scenes = new System.Collections.Generic.List<Scene>
+        {
+            new Scene(0, "Introduction", "Welcome to our tutorial", TimeSpan.FromSeconds(0), TimeSpan.FromSeconds(3)),
+            new Scene(1, "Main Content", "Here's the main content", TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(5)),
+            new Scene(2, "Conclusion", "Thanks for watching", TimeSpan.FromSeconds(8), TimeSpan.FromSeconds(2))
+        };
+        
+        // Act - Generate SRT captions
+        string srtContent = timelineBuilder.GenerateSubtitles(scenes, "SRT");
+        Assert.NotNull(srtContent);
+        Assert.Contains("Welcome to our tutorial", srtContent);
+        
+        // Act - Generate VTT captions
+        string vttContent = timelineBuilder.GenerateSubtitles(scenes, "VTT");
+        Assert.NotNull(vttContent);
+        Assert.StartsWith("WEBVTT", vttContent);
+        Assert.Contains("Here's the main content", vttContent);
+        
+        // Act - Write captions to file
+        string tempSrtPath = System.IO.Path.Combine(
+            System.IO.Path.GetTempPath(), 
+            $"test_captions_{Guid.NewGuid()}.srt");
+        System.IO.File.WriteAllText(tempSrtPath, srtContent);
+        
+        try
+        {
+            // Act - Build timeline with captions
+            var timeline = timelineBuilder.BuildTimeline(
+                scenes,
+                narrationPath: "/path/to/narration.wav",
+                subtitlesPath: tempSrtPath
+            );
+            
+            // Assert - Timeline should have captions linked
+            Assert.NotNull(timeline);
+            Assert.Equal(tempSrtPath, timeline.SubtitlesPath);
+            Assert.Equal(3, timeline.Scenes.Count);
+            
+            // Assert - Subtitle filter can be built
+            string subtitleFilter = audioProcessor.BuildSubtitleFilter(tempSrtPath);
+            Assert.Contains("subtitles=", subtitleFilter);
+            Assert.Contains(".srt", subtitleFilter);
+        }
+        finally
+        {
+            // Cleanup
+            if (System.IO.File.Exists(tempSrtPath))
+            {
+                System.IO.File.Delete(tempSrtPath);
+            }
+        }
+    }
+    
+    /// <summary>
+    /// Tests provider selection with OfflineOnly mode
+    /// </summary>
+    [Fact]
+    public void TtsProviderSelection_Should_RespectOfflineOnly()
+    {
+        // Arrange
+        var config = new ProviderMixingConfig
+        {
+            ActiveProfile = "Pro",
+            AutoFallback = true,
+            LogProviderSelection = false
+        };
+        var mixer = new ProviderMixer(NullLogger<ProviderMixer>.Instance, config);
+        
+        // Simulate offline mode - no Pro providers available
+        var providers = new System.Collections.Generic.Dictionary<string, ITtsProvider>
+        {
+            ["Windows"] = new Aura.Providers.Tts.WindowsTtsProvider(
+                NullLogger<Aura.Providers.Tts.WindowsTtsProvider>.Instance)
+        };
+        
+        // Act
+        var selection = mixer.SelectTtsProvider(providers, "Pro");
+        
+        // Assert - Should fallback to Windows TTS
+        Assert.Equal("Windows", selection.SelectedProvider);
+        Assert.True(selection.IsFallback);
+        Assert.Equal("Pro TTS", selection.FallbackFrom);
+    }
 }
