@@ -2,6 +2,7 @@ using Aura.Core.Hardware;
 using Aura.Core.Models;
 using Aura.Core.Orchestrator;
 using Aura.Core.Providers;
+using Aura.Core.Services;
 using Aura.Providers.Llm;
 using Aura.Providers.Tts;
 using Aura.Providers.Video;
@@ -47,6 +48,7 @@ builder.Services.AddCors(options =>
 // Register core services
 builder.Services.AddSingleton<HardwareDetector>();
 builder.Services.AddSingleton<Aura.Core.Configuration.ProviderSettings>();
+builder.Services.AddSingleton<PreflightService>();
 builder.Services.AddSingleton<ILlmProvider, RuleBasedLlmProvider>();
 builder.Services.AddSingleton<ITtsProvider, WindowsTtsProvider>();
 builder.Services.AddSingleton<IVideoComposer>(sp => 
@@ -69,6 +71,9 @@ builder.Services.AddSingleton<Aura.Core.Dependencies.DependencyManager>(sp =>
     var downloadDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Aura", "dependencies");
     return new Aura.Core.Dependencies.DependencyManager(logger, httpClient, manifestPath, downloadDirectory);
 });
+
+// Register HttpClient for PreflightService
+builder.Services.AddHttpClient();
 
 // Configure Kestrel to listen on specific port
 builder.WebHost.UseUrls("http://127.0.0.1:5005");
@@ -514,6 +519,94 @@ apiGroup.MapPost("/probes/run", async (HardwareDetector detector) =>
     }
 })
 .WithName("RunProbes")
+.WithOpenApi();
+
+apiGroup.MapPost("/preflight/run", async (PreflightService preflightService, CancellationToken ct) =>
+{
+    try
+    {
+        var result = await preflightService.RunPreflightChecksAsync(ct);
+        return Results.Ok(result);
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "Error running preflight checks");
+        return Results.Problem("Error running preflight checks", statusCode: 500);
+    }
+})
+.WithName("RunPreflightChecks")
+.WithOpenApi();
+
+apiGroup.MapPost("/providers/validate", async ([FromBody] ApiKeysRequest request) =>
+{
+    try
+    {
+        var validationResults = new List<object>();
+
+        // Validate OpenAI key format
+        if (!string.IsNullOrWhiteSpace(request.OpenAiKey))
+        {
+            var isValid = request.OpenAiKey.StartsWith("sk-") && request.OpenAiKey.Length > 20;
+            validationResults.Add(new
+            {
+                provider = "openai",
+                valid = isValid,
+                message = isValid ? "Key format is valid" : "Invalid OpenAI key format (should start with 'sk-')"
+            });
+        }
+
+        // Validate ElevenLabs key format
+        if (!string.IsNullOrWhiteSpace(request.ElevenLabsKey))
+        {
+            var isValid = request.ElevenLabsKey.Length >= 32;
+            validationResults.Add(new
+            {
+                provider = "elevenlabs",
+                valid = isValid,
+                message = isValid ? "Key format is valid" : "Invalid ElevenLabs key format"
+            });
+        }
+
+        // Validate Pexels key format
+        if (!string.IsNullOrWhiteSpace(request.PexelsKey))
+        {
+            var isValid = request.PexelsKey.Length >= 40;
+            validationResults.Add(new
+            {
+                provider = "pexels",
+                valid = isValid,
+                message = isValid ? "Key format is valid" : "Invalid Pexels key format"
+            });
+        }
+
+        // Validate Stability AI key format
+        if (!string.IsNullOrWhiteSpace(request.StabilityAiKey))
+        {
+            var isValid = request.StabilityAiKey.StartsWith("sk-") && request.StabilityAiKey.Length > 20;
+            validationResults.Add(new
+            {
+                provider = "stabilityai",
+                valid = isValid,
+                message = isValid ? "Key format is valid" : "Invalid Stability AI key format (should start with 'sk-')"
+            });
+        }
+
+        var allValid = validationResults.All(r => (bool)r.GetType().GetProperty("valid")!.GetValue(r)!);
+        
+        return Results.Ok(new
+        {
+            success = true,
+            allValid,
+            validations = validationResults
+        });
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "Error validating API keys");
+        return Results.Problem("Error validating API keys", statusCode: 500);
+    }
+})
+.WithName("ValidateProviderKeys")
 .WithOpenApi();
 
 apiGroup.MapGet("/profiles/list", () =>

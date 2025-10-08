@@ -53,3 +53,17 @@ public record HardwareOverrides
 }
 
 public record GpuInfo(string Vendor, string Model, int VramGB, string? Series);
+
+public record PreflightCheck(
+    string Name,
+    bool Ok,
+    string Message,
+    string? FixHint = null,
+    string? Link = null
+);
+
+public record PreflightResult(
+    bool Ok,
+    string CorrelationId,
+    List<PreflightCheck> Checks
+);
