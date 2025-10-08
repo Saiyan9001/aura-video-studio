@@ -624,6 +624,95 @@ apiGroup.MapGet("/apikeys/load", () =>
 .WithName("LoadApiKeys")
 .WithOpenApi();
 
+// Assets endpoints for visuals
+apiGroup.MapPost("/assets/search", async ([FromBody] AssetSearchRequest request, HardwareDetector detector) =>
+{
+    try
+    {
+        Log.Information("Searching for assets: query={Query}, provider={Provider}", 
+            request.Query, request.Provider ?? "auto");
+
+        var profile = await detector.DetectSystemAsync();
+        
+        // Simple stock search implementation
+        var assets = new List<object>();
+        
+        // Mock response based on provider
+        for (int i = 0; i < Math.Min(request.Count ?? 5, 10); i++)
+        {
+            assets.Add(new
+            {
+                kind = "image",
+                url = $"https://example.com/stock-image-{i}.jpg",
+                license = request.Provider == "offline" ? "CC0 (Public Domain)" : "Stock License",
+                attribution = $"Stock photo {i + 1}"
+            });
+        }
+
+        return Results.Ok(new { success = true, assets, provider = request.Provider ?? "stock" });
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "Error searching assets");
+        return Results.Problem("Error searching assets", statusCode: 500);
+    }
+})
+.WithName("SearchAssets")
+.WithOpenApi();
+
+apiGroup.MapPost("/assets/generate", async ([FromBody] AssetGenerateRequest request, HardwareDetector detector) =>
+{
+    try
+    {
+        var profile = await detector.DetectSystemAsync();
+        
+        // Check NVIDIA GPU gate
+        if (!profile.EnableSD)
+        {
+            var reason = profile.Gpu?.Vendor?.ToUpperInvariant() != "NVIDIA" 
+                ? "NVIDIA GPU required for local image generation"
+                : $"Insufficient VRAM ({profile.Gpu?.VramGB}GB). Minimum 6GB required for Stable Diffusion.";
+                
+            return Results.Ok(new { 
+                success = false, 
+                gated = true,
+                reason,
+                message = "Local image generation not available. Use stock visuals or Pro cloud providers."
+            });
+        }
+
+        Log.Information("Generating image with SD: prompt={Prompt}, steps={Steps}", 
+            request.Prompt, request.Steps ?? 20);
+
+        // Mock generated asset
+        var asset = new
+        {
+            kind = "image",
+            path = $"generated_{DateTime.Now:yyyyMMddHHmmss}.png",
+            license = "Generated locally",
+            attribution = "Generated with Stable Diffusion",
+            parameters = new
+            {
+                prompt = request.Prompt,
+                steps = request.Steps ?? 20,
+                cfg_scale = request.CfgScale ?? 7.0,
+                seed = request.Seed ?? -1,
+                width = request.Width ?? 1024,
+                height = request.Height ?? 576
+            }
+        };
+
+        return Results.Ok(new { success = true, asset });
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "Error generating asset");
+        return Results.Problem("Error generating asset", statusCode: 500);
+    }
+})
+.WithName("GenerateAsset")
+.WithOpenApi();
+
 // Local Provider Paths Configuration
 apiGroup.MapPost("/providers/paths/save", ([FromBody] ProviderPathsRequest request) =>
 {
@@ -792,3 +881,6 @@ record ApplyProfileRequest(string ProfileName);
 record ApiKeysRequest(string? OpenAiKey, string? ElevenLabsKey, string? PexelsKey, string? StabilityAiKey);
 record ProviderPathsRequest(string? StableDiffusionUrl, string? OllamaUrl, string? FfmpegPath, string? FfprobePath, string? OutputDirectory);
 record ProviderTestRequest(string? Url, string? Path);
+record AssetSearchRequest(string Query, int? Count, string? Provider);
+record AssetGenerateRequest(string Prompt, int? Steps, double? CfgScale, int? Seed, int? Width, int? Height, string? Style);
+

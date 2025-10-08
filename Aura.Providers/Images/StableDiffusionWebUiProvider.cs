@@ -47,6 +47,66 @@ public class StableDiffusionWebUiProvider : IImageProvider
         }
     }
 
+    /// <summary>
+    /// Performs a low-step 256x256 probe to verify SD WebUI is available and working.
+    /// Returns true if probe succeeds, false otherwise.
+    /// </summary>
+    public async Task<bool> ProbeAsync(CancellationToken ct = default)
+    {
+        if (!_isNvidiaGpu || _vramGB < 6)
+        {
+            _logger.LogDebug("Skipping SD probe - hardware requirements not met");
+            return false;
+        }
+
+        _logger.LogInformation("Running SD WebUI probe (256x256, 5 steps)");
+
+        try
+        {
+            var requestBody = new
+            {
+                prompt = "test",
+                negative_prompt = "blurry",
+                steps = 5,
+                width = 256,
+                height = 256,
+                cfg_scale = 7.0,
+                sampler_name = "Euler a",
+                seed = 42
+            };
+
+            var json = JsonSerializer.Serialize(requestBody);
+            var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+            _httpClient.Timeout = TimeSpan.FromSeconds(30);
+            var response = await _httpClient.PostAsync($"{_baseUrl}/sdapi/v1/txt2img", content, ct);
+            
+            if (response.IsSuccessStatusCode)
+            {
+                _logger.LogInformation("SD WebUI probe succeeded");
+                return true;
+            }
+
+            _logger.LogWarning("SD WebUI probe failed with status: {StatusCode}", response.StatusCode);
+            return false;
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogWarning(ex, "SD WebUI probe failed - service not reachable at {BaseUrl}", _baseUrl);
+            return false;
+        }
+        catch (TaskCanceledException)
+        {
+            _logger.LogWarning("SD WebUI probe timed out");
+            return false;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "SD WebUI probe failed with unexpected error");
+            return false;
+        }
+    }
+
     public async Task<IReadOnlyList<Asset>> FetchOrGenerateAsync(Scene scene, VisualSpec spec, CancellationToken ct)
     {
         // NVIDIA-ONLY GATE
