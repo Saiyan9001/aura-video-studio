@@ -28,6 +28,13 @@ jobs:
     - name: Setup MSBuild
       uses: microsoft/setup-msbuild@v2
       
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+        cache-dependency-path: Aura.Web/package-lock.json
+      
     - name: Restore dependencies
       run: dotnet restore ${{ env.SOLUTION_FILE }}
       
@@ -96,3 +103,97 @@ jobs:
         name: build-logs
         path: artifacts/windows/logs
         if-no-files-found: ignore
+    
+    - name: Build Portable ZIP
+      if: success()
+      run: |
+        pwsh -File scripts/packaging/make_portable_zip.ps1 -Configuration Release -Platform x64
+      shell: powershell
+      
+    - name: Run Smoke Test
+      if: success()
+      run: |
+        Write-Host "Running smoke test..." -ForegroundColor Cyan
+        
+        # Extract the portable ZIP to a test directory
+        $testDir = Join-Path $env:TEMP "aura-smoke-test"
+        if (Test-Path $testDir) { Remove-Item $testDir -Recurse -Force }
+        New-Item -ItemType Directory -Force -Path $testDir | Out-Null
+        
+        Expand-Archive -Path "artifacts/windows/portable/AuraVideoStudio_Portable_x64.zip" -DestinationPath $testDir -Force
+        
+        # Start the API in the background
+        Write-Host "Starting API server..." -ForegroundColor Yellow
+        $apiProcess = Start-Process -FilePath "$testDir/api/Aura.Api.exe" -ArgumentList "--urls", "http://127.0.0.1:5006" -WorkingDirectory "$testDir/api" -PassThru -WindowStyle Hidden
+        
+        try {
+          # Wait for API to be ready (max 30 seconds)
+          Write-Host "Waiting for API to be ready..." -ForegroundColor Yellow
+          $maxAttempts = 30
+          $attempts = 0
+          $ready = $false
+          
+          while ($attempts -lt $maxAttempts) {
+            Start-Sleep -Seconds 1
+            $attempts++
+            try {
+              $response = Invoke-WebRequest -Uri "http://127.0.0.1:5006/healthz" -UseBasicParsing -TimeoutSec 2
+              if ($response.StatusCode -eq 200) {
+                Write-Host "API is ready!" -ForegroundColor Green
+                $ready = $true
+                break
+              }
+            } catch {
+              # Continue waiting
+            }
+          }
+          
+          if (-not $ready) {
+            throw "API did not start within 30 seconds"
+          }
+          
+          # Run a quick test - just check that the API responds
+          Write-Host "Testing API endpoints..." -ForegroundColor Yellow
+          
+          # Test health endpoint
+          $health = Invoke-WebRequest -Uri "http://127.0.0.1:5006/healthz" -UseBasicParsing
+          if ($health.StatusCode -ne 200) {
+            throw "Health check failed"
+          }
+          Write-Host "  ✓ Health check passed" -ForegroundColor Green
+          
+          # Test that static files are being served
+          $index = Invoke-WebRequest -Uri "http://127.0.0.1:5006/" -UseBasicParsing
+          if ($index.StatusCode -ne 200) {
+            throw "Static files not being served"
+          }
+          Write-Host "  ✓ Static files served" -ForegroundColor Green
+          
+          Write-Host ""
+          Write-Host "========================================" -ForegroundColor Green
+          Write-Host " Smoke Test PASSED" -ForegroundColor Green
+          Write-Host "========================================" -ForegroundColor Green
+          
+        } finally {
+          # Clean up: stop the API process
+          Write-Host "Cleaning up..." -ForegroundColor Yellow
+          if ($apiProcess -and -not $apiProcess.HasExited) {
+            Stop-Process -Id $apiProcess.Id -Force
+          }
+          
+          # Clean up test directory
+          if (Test-Path $testDir) {
+            Remove-Item $testDir -Recurse -Force
+          }
+        }
+      shell: powershell
+      
+    - name: Upload Portable ZIP
+      if: success()
+      uses: actions/upload-artifact@v4
+      with:
+        name: portable-zip
+        path: |
+          artifacts/windows/portable/AuraVideoStudio_Portable_x64.zip
+          artifacts/windows/portable/AuraVideoStudio_Portable_x64.zip.sha256
+        if-no-files-found: error
