@@ -62,10 +62,11 @@ jobs:
           FOUND_VIOLATIONS=1
         fi
         
-        # Check for MSIX build workflows
-        if grep -r "msix\|MSIX\|AppxBundle\|AppxPackage\|UapAppxPackageBuildMode" .github/workflows/ 2>/dev/null | grep -v "portable-only-guard" | grep -q .; then
-          echo "❌ ERROR: Found MSIX references in GitHub workflows:"
-          grep -r "msix\|MSIX\|AppxBundle\|AppxPackage\|UapAppxPackageBuildMode" .github/workflows/ | grep -v "portable-only-guard"
+        # Check for MSIX build workflows (look for actual build commands, not just checks)
+        MSIX_BUILD_PATTERN="msbuild.*Aura\.App.*Release\|UapAppxPackageBuildMode=\|AppxBundle=\|upload.*msix-package"
+        if grep -r "$MSIX_BUILD_PATTERN" .github/workflows/ 2>/dev/null | grep -v "MSIX_BUILD_PATTERN" | grep -q .; then
+          echo "❌ ERROR: Found MSIX build commands in GitHub workflows:"
+          grep -r "$MSIX_BUILD_PATTERN" .github/workflows/ | grep -v "MSIX_BUILD_PATTERN"
           FOUND_VIOLATIONS=1
         fi
         
