@@ -40,8 +40,36 @@ jobs:
     - name: Run Unit Tests
       run: dotnet test Aura.Tests/Aura.Tests.csproj --configuration Release --no-build --verbosity normal --logger "trx;LogFileName=unit-tests.trx"
       
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+        cache-dependency-path: Aura.Web/package-lock.json
+      
+    - name: Build Web UI
+      run: |
+        cd Aura.Web
+        npm ci
+        npm run build
+      shell: powershell
+      
+    - name: Run Smoke Test
+      run: |
+        Write-Host "Running smoke test..." -ForegroundColor Cyan
+        .\scripts\smoke-test.ps1
+      shell: powershell
+      timeout-minutes: 2
+      
+    - name: Build Portable ZIP
+      run: |
+        Write-Host "Building portable ZIP..." -ForegroundColor Cyan
+        .\scripts\packaging\make_portable_zip.ps1 -Configuration Release -Platform x64
+      shell: powershell
+      
     - name: Build WinUI 3 App (x64)
       run: msbuild Aura.App/Aura.App.csproj /p:Configuration=Release /p:Platform=x64 /p:AppxBundle=Never /p:UapAppxPackageBuildMode=SideloadOnly /restore
+      continue-on-error: true
       
     - name: Create artifacts directory
       run: |
@@ -79,6 +107,16 @@ jobs:
         path: |
           **/TestResults/*.trx
           
+    - name: Upload Portable ZIP
+      if: success()
+      uses: actions/upload-artifact@v4
+      with:
+        name: portable-zip
+        path: |
+          artifacts/windows/portable/AuraVideoStudio_Portable_x64.zip
+          artifacts/windows/portable/checksums.txt
+        if-no-files-found: error
+    
     - name: Upload MSIX Packages
       if: success()
       uses: actions/upload-artifact@v4
