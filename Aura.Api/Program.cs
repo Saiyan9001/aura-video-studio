@@ -2,6 +2,7 @@ using Aura.Core.Hardware;
 using Aura.Core.Models;
 using Aura.Core.Orchestrator;
 using Aura.Core.Providers;
+using Aura.Core.Services;
 using Aura.Providers.Llm;
 using Aura.Providers.Tts;
 using Aura.Providers.Video;
@@ -68,6 +69,16 @@ builder.Services.AddSingleton<Aura.Core.Dependencies.DependencyManager>(sp =>
     var manifestPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Aura", "manifest.json");
     var downloadDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Aura", "dependencies");
     return new Aura.Core.Dependencies.DependencyManager(logger, httpClient, manifestPath, downloadDirectory);
+});
+
+// Register PreflightService
+builder.Services.AddSingleton<PreflightService>(sp =>
+{
+    var logger = sp.GetRequiredService<ILogger<PreflightService>>();
+    var hardwareDetector = sp.GetRequiredService<HardwareDetector>();
+    var providerSettings = sp.GetRequiredService<Aura.Core.Configuration.ProviderSettings>();
+    var httpClientFactory = sp.GetRequiredService<IHttpClientFactory>();
+    return new PreflightService(logger, hardwareDetector, providerSettings, httpClientFactory);
 });
 
 // Configure Kestrel to listen on specific port
@@ -770,6 +781,23 @@ apiGroup.MapPost("/providers/test/{provider}", async (string provider, [FromBody
     }
 })
 .WithName("TestProviderConnection")
+.WithOpenApi();
+
+// Preflight checks endpoint
+apiGroup.MapPost("/preflight/run", async (PreflightService preflightService) =>
+{
+    try
+    {
+        var result = await preflightService.RunPreflightChecksAsync();
+        return Results.Ok(result);
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "Error running preflight checks");
+        return Results.Problem("Error running preflight checks", statusCode: 500);
+    }
+})
+.WithName("RunPreflightChecks")
 .WithOpenApi();
 
 // Fallback to index.html for client-side routing (must be after all API routes)
