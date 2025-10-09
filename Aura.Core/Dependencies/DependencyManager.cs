@@ -201,17 +201,42 @@ public class DependencyManager
         _logger.LogInformation("Downloading file: {Url} to {FilePath}", url, filePath);
         
         // Create directory if it doesn't exist
-        Directory.CreateDirectory(Path.GetDirectoryName(filePath));
+        Directory.CreateDirectory(Path.GetDirectoryName(filePath) ?? _downloadDirectory);
+        
+        long existingBytes = 0;
+        
+        // Check if partial download exists
+        if (File.Exists(filePath))
+        {
+            var fileInfo = new FileInfo(filePath);
+            existingBytes = fileInfo.Length;
+            
+            if (existingBytes >= expectedSize)
+            {
+                _logger.LogInformation("File already fully downloaded: {File}", filePath);
+                progress.Report(new DownloadProgress(existingBytes, expectedSize, 100, url));
+                return;
+            }
+            
+            _logger.LogInformation("Resuming download from {Bytes} bytes", existingBytes);
+        }
+        
+        // Create request with Range header for resume support
+        var request = new HttpRequestMessage(HttpMethod.Get, url);
+        if (existingBytes > 0)
+        {
+            request.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(existingBytes, null);
+        }
         
         // Use HttpClient to download the file
-        using var response = await _httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, ct);
+        using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
         response.EnsureSuccessStatusCode();
         
-        long totalBytes = response.Content.Headers.ContentLength ?? expectedSize;
-        long bytesRead = 0;
+        long totalBytes = existingBytes + (response.Content.Headers.ContentLength ?? (expectedSize - existingBytes));
+        long bytesRead = existingBytes;
         
         using var contentStream = await response.Content.ReadAsStreamAsync(ct);
-        using var fileStream = new FileStream(filePath, FileMode.Create, FileAccess.Write, FileShare.None, 8192, true);
+        using var fileStream = new FileStream(filePath, FileMode.Append, FileAccess.Write, FileShare.None, 8192, true);
         
         var buffer = new byte[8192];
         var lastProgressReport = DateTime.Now;
@@ -279,6 +304,252 @@ public class DependencyManager
         
         return isValid;
     }
+    
+    public async Task<ComponentInfo> GetComponentStatusAsync(string componentName)
+    {
+        var manifest = await LoadManifestAsync();
+        var component = manifest.Components.Find(c => c.Name == componentName);
+        
+        if (component == null)
+        {
+            return new ComponentInfo(
+                componentName,
+                "unknown",
+                ComponentStatus.NotInstalled,
+                false,
+                0,
+                null,
+                "Component not found in manifest");
+        }
+        
+        long totalSize = component.Files.Sum(f => f.SizeBytes);
+        bool allFilesExist = true;
+        bool needsRepair = false;
+        string? errorMessage = null;
+        
+        foreach (var file in component.Files)
+        {
+            string filePath = Path.Combine(_downloadDirectory, file.Filename);
+            if (!File.Exists(filePath))
+            {
+                allFilesExist = false;
+                break;
+            }
+            
+            // Verify checksum
+            if (!await VerifyChecksumAsync(filePath, file.Sha256))
+            {
+                needsRepair = true;
+                errorMessage = $"File {file.Filename} failed checksum verification";
+                break;
+            }
+        }
+        
+        // Run post-install probe if all files exist
+        if (allFilesExist && !needsRepair)
+        {
+            var probeResult = await RunPostInstallProbeAsync(component);
+            if (!probeResult.Success)
+            {
+                needsRepair = true;
+                errorMessage = probeResult.Message;
+            }
+        }
+        
+        ComponentStatus status = needsRepair ? ComponentStatus.NeedsRepair :
+                                allFilesExist ? ComponentStatus.Installed :
+                                ComponentStatus.NotInstalled;
+        
+        return new ComponentInfo(
+            component.Name,
+            component.Version,
+            status,
+            component.IsRequired,
+            totalSize,
+            _downloadDirectory,
+            errorMessage);
+    }
+    
+    public async Task RepairComponentAsync(
+        string componentName,
+        IProgress<DownloadProgress> progress,
+        CancellationToken ct)
+    {
+        _logger.LogInformation("Repairing component: {Component}", componentName);
+        
+        var manifest = await LoadManifestAsync();
+        var component = manifest.Components.Find(c => c.Name == componentName);
+        
+        if (component == null)
+        {
+            throw new ArgumentException($"Component {componentName} not found in manifest");
+        }
+        
+        // Remove all files for this component
+        foreach (var file in component.Files)
+        {
+            string filePath = Path.Combine(_downloadDirectory, file.Filename);
+            if (File.Exists(filePath))
+            {
+                _logger.LogInformation("Removing corrupted file: {File}", filePath);
+                File.Delete(filePath);
+            }
+        }
+        
+        // Re-download the component
+        await DownloadComponentAsync(componentName, progress, ct);
+    }
+    
+    public async Task RemoveComponentAsync(string componentName)
+    {
+        _logger.LogInformation("Removing component: {Component}", componentName);
+        
+        var manifest = await LoadManifestAsync();
+        var component = manifest.Components.Find(c => c.Name == componentName);
+        
+        if (component == null)
+        {
+            throw new ArgumentException($"Component {componentName} not found in manifest");
+        }
+        
+        foreach (var file in component.Files)
+        {
+            string filePath = Path.Combine(_downloadDirectory, file.Filename);
+            if (File.Exists(filePath))
+            {
+                _logger.LogInformation("Deleting file: {File}", filePath);
+                File.Delete(filePath);
+            }
+        }
+    }
+    
+    public string GetComponentInstallDirectory()
+    {
+        return _downloadDirectory;
+    }
+    
+    public async Task<string> GetManualInstallInstructionsAsync(string componentName)
+    {
+        var manifest = await LoadManifestAsync();
+        var component = manifest.Components.Find(c => c.Name == componentName);
+        
+        if (component == null)
+        {
+            throw new ArgumentException($"Component {componentName} not found in manifest");
+        }
+        
+        var instructions = new System.Text.StringBuilder();
+        instructions.AppendLine($"Manual Installation Instructions for {component.Name} v{component.Version}");
+        instructions.AppendLine();
+        instructions.AppendLine("1. Download the following files:");
+        instructions.AppendLine();
+        
+        foreach (var file in component.Files)
+        {
+            instructions.AppendLine($"   File: {file.Filename}");
+            instructions.AppendLine($"   URL: {file.Url}");
+            instructions.AppendLine($"   Size: {file.SizeBytes / (1024.0 * 1024.0):F2} MB");
+            instructions.AppendLine($"   SHA-256: {file.Sha256}");
+            instructions.AppendLine();
+        }
+        
+        instructions.AppendLine($"2. Place the downloaded files in: {_downloadDirectory}");
+        instructions.AppendLine();
+        instructions.AppendLine("3. Verify checksums using:");
+        instructions.AppendLine("   - Windows: certutil -hashfile <filename> SHA256");
+        instructions.AppendLine("   - Linux/Mac: shasum -a 256 <filename>");
+        instructions.AppendLine();
+        instructions.AppendLine("4. Return to Aura and verify installation.");
+        
+        return instructions.ToString();
+    }
+    
+    private async Task<(bool Success, string Message)> RunPostInstallProbeAsync(DependencyComponent component)
+    {
+        // Check for FFmpeg
+        if (component.Name == "FFmpeg")
+        {
+            var ffmpegPath = Path.Combine(_downloadDirectory, "ffmpeg.exe");
+            if (!File.Exists(ffmpegPath))
+            {
+                return (false, "ffmpeg.exe not found");
+            }
+            
+            try
+            {
+                var processInfo = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = ffmpegPath,
+                    Arguments = "-version",
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                };
+                
+                using var process = System.Diagnostics.Process.Start(processInfo);
+                if (process != null)
+                {
+                    await process.WaitForExitAsync();
+                    if (process.ExitCode == 0)
+                    {
+                        return (true, "FFmpeg verified successfully");
+                    }
+                }
+                
+                return (false, "FFmpeg failed to execute");
+            }
+            catch (Exception ex)
+            {
+                return (false, $"FFmpeg probe failed: {ex.Message}");
+            }
+        }
+        
+        // Check for Ollama
+        if (component.Name == "Ollama")
+        {
+            try
+            {
+                using var httpClient = new HttpClient();
+                httpClient.Timeout = TimeSpan.FromSeconds(5);
+                var response = await httpClient.GetAsync("http://127.0.0.1:11434/api/tags");
+                if (response.IsSuccessStatusCode)
+                {
+                    return (true, "Ollama endpoint verified successfully");
+                }
+                
+                return (false, "Ollama endpoint not responding");
+            }
+            catch
+            {
+                return (false, "Ollama not running or not accessible");
+            }
+        }
+        
+        // Check for Stable Diffusion
+        if (component.Name == "StableDiffusion" || component.Name == "StableDiffusionXL")
+        {
+            try
+            {
+                using var httpClient = new HttpClient();
+                httpClient.Timeout = TimeSpan.FromSeconds(5);
+                var response = await httpClient.GetAsync("http://127.0.0.1:7860/sdapi/v1/sd-models");
+                if (response.IsSuccessStatusCode)
+                {
+                    return (true, "Stable Diffusion WebUI verified successfully");
+                }
+                
+                return (false, "Stable Diffusion WebUI not responding");
+            }
+            catch
+            {
+                return (false, "Stable Diffusion WebUI not running or not accessible");
+            }
+        }
+        
+        // For other components, just check file existence
+        return (true, "Component files verified");
+    }
 }
 
 public class DependencyManifest
@@ -301,6 +572,9 @@ public class DependencyFile
     public string Sha256 { get; set; } = "";
     public string ExtractPath { get; set; } = "";
     public long SizeBytes { get; set; }
+    public string InstallPath { get; set; } = "";
+    public bool Required { get; set; }
+    public string? PostInstallProbe { get; set; }
 }
 
 public record DownloadProgress(
@@ -308,3 +582,20 @@ public record DownloadProgress(
     long TotalBytes, 
     float PercentComplete,
     string Url);
+
+public enum ComponentStatus
+{
+    NotInstalled,
+    Installed,
+    NeedsRepair,
+    UpdateAvailable
+}
+
+public record ComponentInfo(
+    string Name,
+    string Version,
+    ComponentStatus Status,
+    bool IsRequired,
+    long TotalSize,
+    string? InstallPath,
+    string? ErrorMessage);
