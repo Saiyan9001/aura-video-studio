@@ -1,3 +1,4 @@
+using Aura.Api.Serialization;
 using Aura.Core.Hardware;
 using Aura.Core.Models;
 using Aura.Core.Orchestrator;
@@ -147,6 +148,15 @@ apiGroup.MapPost("/plan", ([FromBody] PlanRequest request) =>
         
         return Results.Ok(new { success = true, plan });
     }
+    catch (JsonException ex)
+    {
+        Log.Error(ex, "Invalid enum value in plan request");
+        return Results.Problem(
+            detail: ex.Message,
+            statusCode: 400,
+            title: "Invalid Enum Value",
+            type: "https://docs.aura.studio/errors/E303");
+    }
     catch (Exception ex)
     {
         Log.Error(ex, "Error creating plan");
@@ -212,6 +222,15 @@ apiGroup.MapPost("/script", async ([FromBody] ScriptRequest request, ILlmProvide
         
         Log.Information("Script generated successfully: {Length} characters", script.Length);
         return Results.Ok(new { success = true, script });
+    }
+    catch (JsonException ex)
+    {
+        Log.Error(ex, "Invalid enum value in script request");
+        return Results.Problem(
+            detail: ex.Message,
+            statusCode: 400,
+            title: "Invalid Enum Value",
+            type: "https://docs.aura.studio/errors/E303");
     }
     catch (ArgumentException ex)
     {
@@ -781,8 +800,23 @@ if (Directory.Exists(wwwrootPath))
 app.Run();
 
 // DTOs
-record PlanRequest(double TargetDurationMinutes, Pacing Pacing, Density Density, string Style);
-record ScriptRequest(string Topic, string Audience, string Goal, string Tone, string Language, Aspect Aspect, double TargetDurationMinutes, Pacing Pacing, Density Density, string Style);
+record PlanRequest(
+    double TargetDurationMinutes, 
+    Pacing Pacing, 
+    [property: JsonConverter(typeof(TolerantDensityConverter))] Density Density, 
+    string Style);
+
+record ScriptRequest(
+    string Topic, 
+    string Audience, 
+    string Goal, 
+    string Tone, 
+    string Language, 
+    [property: JsonConverter(typeof(TolerantAspectConverter))] Aspect Aspect, 
+    double TargetDurationMinutes, 
+    Pacing Pacing, 
+    [property: JsonConverter(typeof(TolerantDensityConverter))] Density Density, 
+    string Style);
 record TtsRequest(List<LineDto> Lines, string VoiceName, double Rate, double Pitch, PauseStyle PauseStyle);
 record LineDto(int SceneIndex, string Text, double StartSeconds, double DurationSeconds);
 record ComposeRequest(string TimelineJson);
