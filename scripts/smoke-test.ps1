@@ -94,10 +94,10 @@ try {
         goal = "Test"
         tone = "Neutral"
         language = "English"
-        aspect = "Landscape"
+        aspect = "Widescreen16x9"
         targetDurationMinutes = 0.25
-        pacing = "Balanced"
-        density = "Medium"
+        pacing = "Conversational"
+        density = "Balanced"
         style = "Documentary"
     } | ConvertTo-Json
     

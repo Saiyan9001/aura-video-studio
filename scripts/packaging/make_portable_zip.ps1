@@ -172,16 +172,26 @@ if (Test-Path $zipPath) {
 }
 Compress-Archive -Path "$portableBuildDir\*" -DestinationPath $zipPath -Force
 
-# Generate checksums.txt
+# Generate checksums.txt for the ZIP file
 $hash = Get-FileHash -Path $zipPath -Algorithm SHA256
-$checksumFile = Join-Path $portableBuildDir "checksums.txt"
-"$($hash.Hash)  $(Split-Path $zipPath -Leaf)" | Out-File $checksumFile -Encoding utf8
+$checksumContent = "$($hash.Hash)  $(Split-Path $zipPath -Leaf)"
+
+# Save checksums inside the ZIP (extract, add, re-compress)
+$tempExtractDir = Join-Path ([System.IO.Path]::GetTempPath()) "aura-checksums-$(Get-Random)"
+Expand-Archive -Path $zipPath -DestinationPath $tempExtractDir -Force
+$checksumFile = Join-Path $tempExtractDir "checksums.txt"
+$checksumContent | Out-File $checksumFile -Encoding utf8
+
+# Re-create ZIP with checksums included
+Remove-Item $zipPath -Force
+Compress-Archive -Path "$tempExtractDir\*" -DestinationPath $zipPath -Force
+Remove-Item $tempExtractDir -Recurse -Force
 
 # Also save checksums.txt at the portable dir level
 $checksumFileTop = Join-Path $portableDir "checksums.txt"
-"$($hash.Hash)  $(Split-Path $zipPath -Leaf)" | Out-File $checksumFileTop -Encoding utf8
+$checksumContent | Out-File $checksumFileTop -Encoding utf8
 
-Write-Host "      ✓ ZIP created" -ForegroundColor Green
+Write-Host "      ✓ ZIP created with checksums" -ForegroundColor Green
 
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Green
