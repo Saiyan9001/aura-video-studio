@@ -47,6 +47,7 @@ builder.Services.AddCors(options =>
 // Register core services
 builder.Services.AddSingleton<HardwareDetector>();
 builder.Services.AddSingleton<Aura.Core.Configuration.ProviderSettings>();
+builder.Services.AddSingleton<Aura.Core.Preflight.PreflightService>();
 builder.Services.AddSingleton<ILlmProvider, RuleBasedLlmProvider>();
 builder.Services.AddSingleton<ITtsProvider, WindowsTtsProvider>();
 builder.Services.AddSingleton<IVideoComposer>(sp => 
