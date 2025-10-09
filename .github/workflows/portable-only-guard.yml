@@ -1,0 +1,114 @@
+name: CI Guard - Portable Only
+
+on:
+  push:
+    branches: [ main, develop, chore/cleanup-portable-only ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+jobs:
+  portable-only-guard:
+    name: Verify Portable-Only Policy
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Check for MSIX/EXE packaging artifacts
+      run: |
+        echo "=== Checking for prohibited MSIX/EXE packaging patterns ==="
+        echo ""
+        
+        FAILED=false
+        
+        # Check for .iss files (Inno Setup)
+        if find . -name "*.iss" -not -path "./.git/*" | grep -q .; then
+          echo "❌ FAILED: Found Inno Setup (.iss) files"
+          find . -name "*.iss" -not -path "./.git/*"
+          FAILED=true
+        else
+          echo "✓ No Inno Setup (.iss) files found"
+        fi
+        
+        # Check for MSIX artifacts
+        if find . -name "*.msix*" -o -name "*.appx*" -o -name "*.msixbundle*" | grep -q .; then
+          echo "❌ FAILED: Found MSIX/APPX artifacts"
+          find . -name "*.msix*" -o -name "*.appx*" -o -name "*.msixbundle*"
+          FAILED=true
+        else
+          echo "✓ No MSIX/APPX artifacts found"
+        fi
+        
+        # Check for certificate files
+        if find . -name "*.cer" -not -path "./.git/*" | grep -q .; then
+          echo "❌ FAILED: Found certificate (.cer) files"
+          find . -name "*.cer" -not -path "./.git/*"
+          FAILED=true
+        else
+          echo "✓ No certificate (.cer) files found"
+        fi
+        
+        # Check for MSIX/installer patterns in scripts/packaging/
+        if [ -d "scripts/packaging" ]; then
+          echo ""
+          echo "Checking scripts/packaging/ for prohibited patterns..."
+          
+          if find scripts/packaging -type f \( -iname "*msix*" -o -iname "*inno*" -o -iname "*installer*" -o -iname "*setup*" \) -not -name "*.md" | grep -q .; then
+            echo "❌ FAILED: Found prohibited file patterns in scripts/packaging/"
+            find scripts/packaging -type f \( -iname "*msix*" -o -iname "*inno*" -o -iname "*installer*" -o -iname "*setup*" \) -not -name "*.md"
+            FAILED=true
+          else
+            echo "✓ No prohibited file patterns in scripts/packaging/"
+          fi
+        fi
+        
+        # Check workflow files for MSIX references
+        echo ""
+        echo "Checking GitHub workflows for MSIX/EXE references..."
+        
+        if [ -d ".github/workflows" ]; then
+          # Exclude this guard workflow itself
+          WORKFLOW_FILES=$(find .github/workflows -name "*.yml" -o -name "*.yaml" | grep -v "portable-only-guard.yml")
+          
+          for workflow in $WORKFLOW_FILES; do
+            if grep -qi "msix\|AppxBundle\|UapAppx\|setup.*exe\|inno.*setup" "$workflow"; then
+              echo "❌ FAILED: Found MSIX/EXE references in $workflow"
+              grep -ni "msix\|AppxBundle\|UapAppx\|setup.*exe\|inno.*setup" "$workflow" || true
+              FAILED=true
+            fi
+          done
+          
+          if [ "$FAILED" = false ]; then
+            echo "✓ No MSIX/EXE references in workflows"
+          fi
+        fi
+        
+        echo ""
+        if [ "$FAILED" = true ]; then
+          echo "=========================================="
+          echo "❌ CI GUARD FAILED"
+          echo "=========================================="
+          echo ""
+          echo "MSIX/EXE packaging artifacts detected in repository."
+          echo ""
+          echo "Aura Video Studio has adopted a portable-only distribution policy."
+          echo "MSIX packages and traditional installers (EXE) are no longer supported."
+          echo ""
+          echo "To fix this:"
+          echo "  1. Run: ./scripts/cleanup/portable_only_cleanup.sh"
+          echo "  2. Remove any MSIX/EXE references from code and workflows"
+          echo "  3. Use only: ./scripts/packaging/build-portable.ps1"
+          echo ""
+          echo "See README.md for the portable-only distribution policy."
+          echo ""
+          exit 1
+        else
+          echo "=========================================="
+          echo "✓ CI GUARD PASSED"
+          echo "=========================================="
+          echo ""
+          echo "Repository complies with portable-only distribution policy."
+          echo ""
+        fi
