@@ -53,3 +53,76 @@ public record HardwareOverrides
 }
 
 public record GpuInfo(string Vendor, string Model, int VramGB, string? Series);
+
+/// <summary>
+/// Input for requesting planner recommendations
+/// </summary>
+public record RecommendationRequest(
+    Brief Brief,
+    PlanSpec PlanSpec,
+    string? AudiencePersona,
+    PlannerConstraints? Constraints
+);
+
+/// <summary>
+/// Constraints for recommendation generation
+/// </summary>
+public record PlannerConstraints(
+    int? MaxSceneCount,
+    int? MinSceneCount,
+    double? MaxBRollPercentage,
+    double? MinBRollPercentage,
+    bool? PreferHighQuality
+);
+
+/// <summary>
+/// Comprehensive recommendations from the planner
+/// </summary>
+public record PlannerRecommendations(
+    string Outline,
+    int SceneCount,
+    int ShotsPerScene,
+    double BRollPercentage,
+    double OverlayDensity,
+    string ReadingLevel,
+    VoiceRecommendations Voice,
+    MusicRecommendations Music,
+    CaptionRecommendations Captions,
+    string ThumbnailPrompt,
+    SeoRecommendations Seo
+);
+
+/// <summary>
+/// Voice rate and pitch recommendations
+/// </summary>
+public record VoiceRecommendations(
+    double Rate,
+    double Pitch
+);
+
+/// <summary>
+/// Music tempo and intensity curve recommendations
+/// </summary>
+public record MusicRecommendations(
+    int Tempo,
+    string IntensityCurve
+);
+
+/// <summary>
+/// Caption style recommendations
+/// </summary>
+public record CaptionRecommendations(
+    string Style,
+    string Position,
+    int FontSize,
+    string Color
+);
+
+/// <summary>
+/// SEO recommendations including title, description, and tags
+/// </summary>
+public record SeoRecommendations(
+    string Title,
+    string Description,
+    string[] Tags
+);

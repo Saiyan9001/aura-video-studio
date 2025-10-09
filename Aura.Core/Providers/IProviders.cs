@@ -11,6 +11,13 @@ public interface ILlmProvider
     Task<string> DraftScriptAsync(Brief brief, PlanSpec spec, CancellationToken ct);
 }
 
+public interface IRecommendationEngine
+{
+    Task<PlannerRecommendations> GenerateRecommendationsAsync(
+        RecommendationRequest request, 
+        CancellationToken ct);
+}
+
 public interface ITtsProvider
 {
     Task<IReadOnlyList<string>> GetAvailableVoicesAsync();
