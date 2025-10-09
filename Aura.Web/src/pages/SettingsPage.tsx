@@ -16,6 +16,7 @@ import {
 } from '@fluentui/react-components';
 import { Save24Regular } from '@fluentui/react-icons';
 import type { Profile } from '../types';
+import { PreflightModal } from '../components/PreflightModal';
 
 const useStyles = makeStyles({
   container: {
@@ -64,6 +65,7 @@ export function SettingsPage() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [offlineMode, setOfflineMode] = useState(false);
   const [settings, setSettings] = useState<any>({});
+  const [preflightModalOpen, setPreflightModalOpen] = useState(false);
   
   // UI Settings state
   const [uiScale, setUiScale] = useState(100);
@@ -327,20 +329,28 @@ export function SettingsPage() {
               </Text>
             </Field>
 
-            <Button
-              onClick={async () => {
-                try {
-                  const response = await fetch('/api/probes/run', { method: 'POST' });
-                  if (response.ok) {
-                    alert('Hardware probes completed successfully');
+            <div style={{ display: 'flex', gap: tokens.spacingHorizontalM }}>
+              <Button
+                onClick={async () => {
+                  try {
+                    const response = await fetch('/api/probes/run', { method: 'POST' });
+                    if (response.ok) {
+                      alert('Hardware probes completed successfully');
+                    }
+                  } catch (error) {
+                    console.error('Error running probes:', error);
                   }
-                } catch (error) {
-                  console.error('Error running probes:', error);
-                }
-              }}
-            >
-              Run Hardware Probes
-            </Button>
+                }}
+              >
+                Run Hardware Probes
+              </Button>
+              <Button
+                appearance="primary"
+                onClick={() => setPreflightModalOpen(true)}
+              >
+                Run Preflight Now
+              </Button>
+            </div>
           </div>
         </Card>
       )}
@@ -626,6 +636,24 @@ export function SettingsPage() {
           Save Settings
         </Button>
       </div>
+
+      <PreflightModal
+        open={preflightModalOpen}
+        onClose={() => setPreflightModalOpen(false)}
+        onAutoSwitchToFree={async () => {
+          // Switch to Free-Only profile
+          try {
+            await fetch('/api/profiles/apply', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ profileName: 'Free-Only' }),
+            });
+            alert('Switched to Free-Only profile');
+          } catch (error) {
+            console.error('Error switching to Free-Only profile:', error);
+          }
+        }}
+      />
     </div>
   );
 }

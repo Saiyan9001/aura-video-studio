@@ -168,10 +168,36 @@ apiGroup.MapPost("/plan", ([FromBody] PlanRequest request) =>
 .WithOpenApi();
 
 // Script generation endpoint
-apiGroup.MapPost("/script", async ([FromBody] ScriptRequest request, ILlmProvider llmProvider, CancellationToken ct) =>
+apiGroup.MapPost("/script", async ([FromBody] ScriptRequest request, ILlmProvider llmProvider, PreflightService preflightService, CancellationToken ct) =>
 {
     try
     {
+        // Run preflight checks before generation
+        Log.Information("Running preflight checks before script generation");
+        var preflightResult = await preflightService.RunPreflightChecksAsync();
+        
+        if (!preflightResult.Ok)
+        {
+            var failedChecks = preflightResult.Checks.Where(c => !c.Ok && c.Severity == "error").ToList();
+            var errorMessages = string.Join("; ", failedChecks.Select(c => c.Message));
+            
+            Log.Warning("Preflight checks failed. Blocking script generation. CorrelationId: {CorrelationId}", preflightResult.CorrelationId);
+            
+            return Results.Problem(
+                detail: $"Preflight checks failed: {errorMessages}. Please fix configuration issues before generating.",
+                statusCode: 400,
+                title: "Configuration Invalid",
+                type: "https://docs.aura.studio/errors/preflight-failed",
+                extensions: new Dictionary<string, object?>
+                {
+                    ["correlationId"] = preflightResult.CorrelationId,
+                    ["failedChecks"] = failedChecks.Select(c => new { c.Name, c.Message, c.FixHint, c.Link }).ToList(),
+                    ["canAutoSwitchToFree"] = preflightResult.CanAutoSwitchToFree
+                });
+        }
+        
+        Log.Information("Preflight checks passed. CorrelationId: {CorrelationId}", preflightResult.CorrelationId);
+        
         // Validate required fields
         if (string.IsNullOrWhiteSpace(request.Topic))
         {
@@ -413,10 +439,36 @@ apiGroup.MapPost("/compose", ([FromBody] ComposeRequest request) =>
 .WithName("ComposeTimeline")
 .WithOpenApi();
 
-apiGroup.MapPost("/render", ([FromBody] RenderRequest request) =>
+apiGroup.MapPost("/render", async ([FromBody] RenderRequest request, PreflightService preflightService) =>
 {
     try
     {
+        // Run preflight checks before rendering
+        Log.Information("Running preflight checks before render");
+        var preflightResult = await preflightService.RunPreflightChecksAsync();
+        
+        if (!preflightResult.Ok)
+        {
+            var failedChecks = preflightResult.Checks.Where(c => !c.Ok && c.Severity == "error").ToList();
+            var errorMessages = string.Join("; ", failedChecks.Select(c => c.Message));
+            
+            Log.Warning("Preflight checks failed. Blocking render. CorrelationId: {CorrelationId}", preflightResult.CorrelationId);
+            
+            return Results.Problem(
+                detail: $"Preflight checks failed: {errorMessages}. Please fix configuration issues before rendering.",
+                statusCode: 400,
+                title: "Configuration Invalid",
+                type: "https://docs.aura.studio/errors/preflight-failed",
+                extensions: new Dictionary<string, object?>
+                {
+                    ["correlationId"] = preflightResult.CorrelationId,
+                    ["failedChecks"] = failedChecks.Select(c => new { c.Name, c.Message, c.FixHint, c.Link }).ToList(),
+                    ["canAutoSwitchToFree"] = preflightResult.CanAutoSwitchToFree
+                });
+        }
+        
+        Log.Information("Preflight checks passed. Starting render. CorrelationId: {CorrelationId}", preflightResult.CorrelationId);
+        
         var jobId = Guid.NewGuid().ToString();
         renderJobs[jobId] = new RenderJobDto(
             Id: jobId,
