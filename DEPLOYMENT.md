@@ -61,37 +61,41 @@ This document summarizes the implementation of the web-based architecture for Au
 - Starts API in background for integration testing
 - Uploads build artifacts
 
-**Windows CI** (`.github/workflows/ci-windows.yml`):
-- Builds all .NET projects including Aura.App
-- Runs unit tests
-- Builds WinUI 3 app with MSBuild
-- Packages MSIX
-- Generates SHA-256 checksums
-- Uploads MSIX packages and test results
-- Optional: Code signing if certificate provided
+**Standard CI** (`.github/workflows/ci.yml`):
+- **Portable-Only Policy Guard** - Checks for prohibited MSIX/EXE files
+- Builds all .NET projects (Aura.Core, Aura.Providers, Aura.Api)
+- Runs unit tests (92 passing)
+- Runs E2E integration tests
+- Uploads test results
+- Fails pipeline if MSIX/EXE packaging files are detected
 
 ### 4. Packaging Infrastructure ✅
 
 **Location**: `scripts/packaging/`
 
 **Scripts**:
-- `build-all.ps1` - Unified build script for all distributions
-  - Builds MSIX package (WinUI 3)
+- `build-all.ps1` - Unified build script for portable distribution
   - Creates Portable ZIP with API, Web, FFmpeg
-  - Compiles Setup EXE (Inno Setup)
   - Generates SHA-256 checksums
-  - Optional code signing
+  - Self-contained .NET application
   
-- `setup.iss` - Inno Setup script for traditional installer
-  - Installs to Program Files
-  - Creates shortcuts
-  - Includes uninstaller
-  - Checks for .NET 8 runtime
-  
-- `generate-sbom.ps1` - SBOM generation
-  - CycloneDX format JSON
-  - License attributions (MIT, LGPL, Apache)
-  - Component inventory
+- `build-portable.ps1` - Dedicated portable builder
+  - Cleaner output with build progress
+  - Optimized for portable-only workflow
+  - Automatic cleanup and verification
+
+**Cleanup Scripts** (Location: `scripts/cleanup/`):
+- `portable_only_cleanup.ps1` - PowerShell cleanup script
+  - Removes MSIX/EXE packaging files
+  - ~~Deletes `setup.iss`~~ (Inno Setup installer)
+  - ~~Removes `generate-sbom.ps1`~~ (SBOM generation)
+  - ~~Deletes `Package.appxmanifest`~~ (WinUI 3 package manifest)
+  - Supports dry-run mode for safety
+
+- `portable_only_cleanup.sh` - Bash cleanup script
+  - Linux-compatible version
+  - Same functionality as PowerShell version
+  - Cross-platform cleanup support
 
 **Documentation**:
 - Complete README with examples
@@ -195,32 +199,39 @@ Legend:
 
 ## Distribution Artifacts
 
-### MSIX Package (Recommended)
-- **File**: `AuraVideoStudio_x64.msix`
-- **Shell**: WinUI 3 with Mica window chrome
-- **Installation**: Microsoft Store or sideloading
-- **Updates**: Via Store or manual
-- **Includes**: WinUI 3 app, API, Web UI, FFmpeg
+### 📦 Portable-Only Distribution Policy
 
-### Setup EXE (Traditional Installer)
-- **File**: `AuraVideoStudio_Setup.exe`
-- **Shell**: WPF with classic window
-- **Installation**: Traditional installer (Inno Setup)
-- **Uninstall**: Add/Remove Programs
-- **Includes**: WPF app, API, Web UI, FFmpeg
+**This repository has adopted a portable-only distribution policy.**
 
-### Portable ZIP (No Install)
+✅ **Supported Distribution:**
+
+### Portable ZIP (Primary Distribution)
 - **File**: `AuraVideoStudio_Portable_x64.zip`
 - **Shell**: Direct API launch with browser
 - **Installation**: Extract and run `Launch.bat`
 - **Portable**: No registry or system changes
 - **Includes**: Self-contained API with embedded Web UI (wwwroot), FFmpeg, launcher script
 - **Status**: ✅ Working - API serves static Web UI files
+- **Build**: `.\scripts\packaging\build-portable.ps1`
+
+❌ **No Longer Supported:**
+- ~~MSIX Package~~ (removed - was for Windows Store distribution)
+- ~~Setup EXE~~ (removed - was traditional Inno Setup installer)
+- ~~Windows Store distribution~~ (removed)
+
+**Why Portable-Only?**
+- Simpler distribution model
+- No signing certificates required
+- Works on any Windows system without admin rights
+- Easier to test and verify
+- Reduces maintenance burden
+
+**CI Guard:** The CI pipeline automatically fails if MSIX/EXE packaging files are reintroduced.
 
 ### Support Files
-- `checksums.txt` - SHA-256 hashes for all distributions
-- `sbom.json` - CycloneDX Software Bill of Materials
-- `attributions.txt` - Third-party license information
+- `checksums.txt` - SHA-256 hashes for portable distribution
+- ~~`sbom.json`~~ (removed with SBOM generation script)
+- ~~`attributions.txt`~~ (removed with SBOM generation script)
 
 ## Test Results
 
@@ -251,20 +262,22 @@ npm run dev
 # Browser: http://localhost:5173
 ```
 
-### Building MSIX (Windows Only)
+### Building Portable Distribution (Windows)
 ```powershell
-# Build WinUI 3 packaged app
-msbuild Aura.App/Aura.App.csproj /p:Configuration=Release /p:Platform=x64
+# Build portable ZIP distribution
+.\scripts\packaging\build-portable.ps1
 
-# Or use the unified script
+# Or use the unified build script
 .\scripts\packaging\build-all.ps1
+
+# Output: artifacts/portable/AuraVideoStudio_Portable_x64.zip
 ```
 
 ### CI/CD Pipeline
-1. **Pull Request**: Runs Linux CI (build + test)
-2. **Merge to Main**: Runs both Linux and Windows CI
-3. **Windows CI**: Builds MSIX, generates checksums, uploads artifacts
-4. **Release**: Attach artifacts from Windows CI to GitHub Release
+1. **Pull Request**: Runs CI with portable-only policy guard
+2. **Policy Guard**: Checks for prohibited MSIX/EXE files
+3. **Build and Test**: Builds all projects and runs 92 tests
+4. **Portable Distribution**: Can be built locally for releases
 
 ## What's Still Needed
 

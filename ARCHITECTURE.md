@@ -141,38 +141,29 @@ Developer runs:
 3. Opens browser to http://localhost:5173
 ```
 
-### Production - MSIX Package (Recommended)
-```
-User installs:
-- AuraVideoStudio_x64.msix (via sideload or Store)
-
-User launches:
-1. WinUI 3 shell starts
-2. Shell starts Aura.Api child process
-3. Shell waits for API /healthz
-4. WebView2 navigates to API URL
-5. Aura.Web served from API static files
-```
-
-### Production - Setup EXE
-```
-User installs:
-- AuraVideoStudio_Setup.exe (Inno Setup installer)
-- Installs to C:\Program Files\AuraVideoStudio
-
-User launches:
-1. WPF shell starts (AuraVideoStudio.exe)
-2. Rest same as MSIX
-```
-
-### Production - Portable ZIP
+### Production - Portable ZIP (Only Supported Distribution)
 ```
 User extracts:
 - AuraVideoStudio_Portable_x64.zip to any folder
 
 User runs:
-- Launch.bat or AuraVideoStudio.exe directly
-- Self-contained, no installation needed
+- Launch.bat (starts API and opens browser)
+
+How it works:
+1. Launch.bat starts Aura.Api.exe
+2. API serves Web UI from wwwroot/
+3. Browser automatically opens to http://127.0.0.1:5005
+4. Self-contained, no installation needed, no registry changes
+
+Build command:
+- .\scripts\packaging\build-portable.ps1
+```
+
+### ~~Production - MSIX Package~~ (Removed)
+**No longer supported.** This repository has adopted a portable-only distribution policy.
+
+### ~~Production - Setup EXE~~ (Removed)
+**No longer supported.** This repository has adopted a portable-only distribution policy.
 ```
 
 ## Platform Strategy
@@ -198,14 +189,14 @@ User runs:
 - Starts API and tests basic functionality
 - Produces build artifacts
 
-### ci-windows.yml
+### ci.yml (Standard CI)
+- **Portable-Only Policy Guard**: Checks for prohibited MSIX/EXE files
 - Runs on `windows-latest`
-- Builds all projects including Aura.App
-- Runs unit tests
-- Builds WinUI 3 packaged app (MSIX)
-- Generates checksums (SHA-256)
-- Optional: Signs artifacts with PFX certificate
-- Uploads MSIX packages and logs
+- Builds all .NET projects (Aura.Core, Aura.Providers, Aura.Api)
+- Runs unit tests (92 passing)
+- Runs E2E integration tests
+- Fails pipeline if MSIX/EXE packaging files are detected
+- Uploads test results
 
 ## Security Considerations
 
@@ -215,9 +206,9 @@ User runs:
 - **Linux dev**: Plaintext in `~/.aura-dev/` with warnings
 
 ### Code Signing
-- MSIX and EXE can be signed with PFX certificate
-- Certificate stored in GitHub Secrets for CI/CD
-- Unsigned builds clearly marked
+- ~~MSIX and EXE signing~~ (removed - portable-only distribution)
+- Portable ZIP uses SHA-256 checksums for integrity verification
+- No code signing required for portable distribution
 
 ### WebView2
 - Uses Evergreen runtime (auto-updates)
@@ -229,7 +220,7 @@ User runs:
 1. **Server-Sent Events (SSE)** for live log streaming and render progress
 2. **SignalR Hub** for real-time collaboration features
 3. **Electron-based Linux/macOS versions** (if demand exists)
-4. **Microsoft Store submission** for MSIX distribution
+4. ~~**Microsoft Store submission**~~ (removed - portable-only policy)
 5. **Auto-update mechanism** for portable distributions
 6. **Telemetry and crash reporting** (with user opt-out)
 
@@ -241,26 +232,20 @@ aura-video-studio/
 ├── Aura.Providers/         # Provider implementations (.NET 8)
 ├── Aura.Api/               # Backend API (ASP.NET Core 8)
 ├── Aura.Web/               # Frontend UI (React + Vite)
-├── Aura.Host.Win/          # Windows shells (WinUI 3 + WPF) [Planned]
-│   ├── Packaged/           # WinUI 3 for MSIX
-│   └── Portable/           # WPF for EXE/ZIP
-├── Aura.App/               # Original WinUI 3 app
+├── Aura.App/               # Original WinUI 3 app (legacy)
 ├── Aura.Tests/             # Unit tests
 ├── Aura.E2E/               # Integration tests
 ├── scripts/
 │   ├── ffmpeg/             # FFmpeg binaries
-│   └── packaging/          # Build scripts (MSIX, EXE, ZIP)
+│   ├── packaging/          # Build scripts (portable ZIP only)
+│   └── cleanup/            # Cleanup scripts for portable-only policy
 ├── .github/workflows/
 │   ├── ci-linux.yml        # Linux CI
-│   └── ci-windows.yml      # Windows CI + packaging
+│   └── ci.yml              # Standard CI with portable-only guard
 └── artifacts/              # Build outputs (created during build)
-    └── windows/
-        ├── msix/
-        ├── exe/
-        ├── portable/
-        ├── checksums.txt
-        ├── sbom.json
-        └── attributions.txt
+    └── portable/
+        ├── AuraVideoStudio_Portable_x64.zip
+        └── checksum.txt
 ```
 
 ## Technology Stack Summary
@@ -273,10 +258,8 @@ aura-video-studio/
 | Aura.Web | React 18 + TypeScript | Frontend UI |
 | UI Framework | Fluent UI React | Windows 11 design system |
 | Build Tool | Vite | Fast bundling |
-| Windows Shell (MSIX) | WinUI 3 + WebView2 | Native MSIX app |
-| Windows Shell (Portable) | WPF + WebView2 | Self-contained EXE |
-| Packaging (MSIX) | Windows App SDK | Store-ready package |
-| Packaging (EXE) | Inno Setup | Traditional installer |
+| Distribution | Portable ZIP | Self-contained, no installation |
+| CI Guard | Bash/PowerShell | Enforces portable-only policy |
 | Video | FFmpeg | Rendering engine |
 | Audio | NAudio | DSP and mixing |
 | Logging | Serilog | Structured logging |

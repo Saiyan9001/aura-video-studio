@@ -55,6 +55,31 @@ cd Aura.Web && npm install && npm run dev
 
 For detailed build instructions, see [INSTALL.md](./INSTALL.md)
 
+## 📦 Distribution Policy: Portable-Only
+
+**This repository has adopted a portable-only distribution policy.**
+
+✅ **Supported Distribution:**
+- **Portable ZIP** - Self-contained, no installation required
+  - Extract and run `Launch.bat`
+  - Includes API, Web UI, and FFmpeg
+  - No registry changes or system modifications
+  - Build with: `.\scripts\packaging\build-portable.ps1`
+
+❌ **No Longer Supported:**
+- ~~MSIX packages~~ (removed)
+- ~~EXE installers~~ (removed)
+- ~~Windows Store distribution~~ (removed)
+
+**Why Portable-Only?**
+- Simpler distribution model
+- No signing certificates required
+- Works on any Windows system without admin rights
+- Easier to test and verify
+- Reduces maintenance burden
+
+**CI Guard:** The CI pipeline automatically fails if MSIX/EXE packaging files are reintroduced, ensuring the portable-only policy is enforced.
+
 **See detailed documentation:**
 - [INSTALL.md](./INSTALL.md) - **Build and installation guide**
 - [LOCAL_PROVIDERS_SETUP.md](./LOCAL_PROVIDERS_SETUP.md) - **How to set up local AI providers (Stable Diffusion, Ollama, FFmpeg)**
@@ -88,7 +113,7 @@ For detailed build instructions, see [INSTALL.md](./INSTALL.md)
 * **Graphics/Compositing:** `SkiaSharp` for thumbnail/text overlays/waveforms.
 * **JSON/HTTP:** `System.Text.Json`, `HttpClientFactory`.
 * **DI & MVVM:** `CommunityToolkit.Mvvm`, `Microsoft.Extensions.Hosting`.
-* **Packaging:** MSIX with desktop‑bridge and signed installer.
+* **Packaging:** Portable ZIP distribution (no installation required).
 * **Unit Tests:** xUnit + FluentAssertions; 90%+ coverage on core services.
 * **E2E Smoke:** Minimal UI test via WinAppDriver (smoke render, one full free‑path render).
 
@@ -590,17 +615,17 @@ Aura.sln
 
 The repository includes a comprehensive CI/CD workflow (`.github/workflows/ci.yml`) that runs on every push and pull request:
 
+**Portable-Only Policy Guard Job** (runs on `ubuntu-latest`):
+- Checks for prohibited MSIX/EXE packaging files
+- Fails the pipeline if violations are detected
+- Enforces portable-only distribution policy
+
 **Build and Test Job** (runs on `windows-latest`):
 - Restores all NuGet dependencies
 - Builds core projects: Aura.Core, Aura.Providers, Aura.Tests, Aura.E2E
 - Runs all 84 unit tests with detailed reporting
 - Runs all 8 E2E integration tests
 - Uploads test results as artifacts
-
-**Build WinUI App Job** (runs after tests pass):
-- Builds the WinUI 3 desktop application (Aura.App)
-- Creates MSIX package for Windows deployment
-- Uploads MSIX artifact for distribution
 
 ### Running Locally
 
@@ -652,7 +677,7 @@ All downloads are verified using SHA-256 checksums before installation.
 6. **Orchestrator** – stage selection, downgrade logic, structured logging of decisions.
 7. **UX polish** – resizable panes, tooltips, status bar, accessibility.
 8. **Tests & CI** – mocks/fixtures; golden tests; GitHub Actions Windows runner.
-9. **Docs & MSIX** – first‑run guide; troubleshooting; offline/pro mixing examples.
+9. **Docs & Packaging** – first‑run guide; troubleshooting; offline/pro mixing examples; portable distribution.
 
 (implement in order)
 
@@ -679,9 +704,10 @@ All downloads are verified using SHA-256 checksums before installation.
 
    * Mock WMI + fixture JSON for `nvidia-smi` output.
    * Golden tests for tier decisions and FFmpeg filtergraphs.
-8. **Docs & MSIX**
+8. **Docs & Packaging**
 
    * First‑run guide explaining tiers and offline/pro options.
+   * Portable distribution documentation.
 
 (implement in order)
 
@@ -718,7 +744,7 @@ All downloads are verified using SHA-256 checksums before installation.
 
     * OAuth flow, video upload with metadata; handle rate limits.
 12. **Settings UI** and secure key storage (DPAPI).
-13. **MSIX Packaging** and first‑run experience with sample project.
+13. **Portable Distribution Packaging** and first‑run experience with sample project.
 
 ---
 
@@ -764,7 +790,7 @@ When LLM is available, use high‑quality prompts with structure (system + user)
 ## Deliverables
 
 * Complete WinUI 3 solution with the above structure and providers.
-* MSIX package and README with one‑click Quick Generate demo.
-* Automated tests and CI workflow.
+* Portable ZIP distribution with one‑click Quick Generate demo.
+* Automated tests and CI workflow with portable-only enforcement.
 
 **Now implement the full application end‑to‑end following this specification. Prioritize stability, clarity, and maintainability.**

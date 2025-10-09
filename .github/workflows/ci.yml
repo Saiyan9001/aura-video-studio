@@ -12,9 +12,84 @@ env:
   SOLUTION_FILE: Aura.sln
 
 jobs:
+  # CI Guard: Fail if MSIX/EXE packaging files are detected
+  portable-only-guard:
+    name: Portable-Only Policy Guard
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Check for MSIX/EXE packaging files
+      run: |
+        echo "Checking for prohibited MSIX/EXE packaging files..."
+        
+        FOUND_VIOLATIONS=0
+        
+        # Check for .iss files (Inno Setup)
+        if find . -name "*.iss" -not -path "./.git/*" | grep -q .; then
+          echo "❌ ERROR: Found Inno Setup (.iss) files:"
+          find . -name "*.iss" -not -path "./.git/*"
+          FOUND_VIOLATIONS=1
+        fi
+        
+        # Check for Package.appxmanifest
+        if find . -name "Package.appxmanifest" -not -path "./.git/*" | grep -q .; then
+          echo "❌ ERROR: Found Package.appxmanifest files:"
+          find . -name "Package.appxmanifest" -not -path "./.git/*"
+          FOUND_VIOLATIONS=1
+        fi
+        
+        # Check for .msix/.msixbundle/.appx files
+        if find . \( -name "*.msix" -o -name "*.msixbundle" -o -name "*.appx*" \) -not -path "./.git/*" | grep -q .; then
+          echo "❌ ERROR: Found MSIX/APPX artifact files:"
+          find . \( -name "*.msix" -o -name "*.msixbundle" -o -name "*.appx*" \) -not -path "./.git/*"
+          FOUND_VIOLATIONS=1
+        fi
+        
+        # Check for MSIX-related keywords in packaging scripts
+        if find scripts/packaging -type f \( -name "*.ps1" -o -name "*.sh" \) -exec grep -l "msix\|MSIX\|AppxBundle\|msbuild.*Aura.App" {} \; 2>/dev/null | grep -q .; then
+          echo "❌ ERROR: Found MSIX references in packaging scripts:"
+          find scripts/packaging -type f \( -name "*.ps1" -o -name "*.sh" \) -exec grep -l "msix\|MSIX\|AppxBundle\|msbuild.*Aura.App" {} \;
+          FOUND_VIOLATIONS=1
+        fi
+        
+        # Check for setup/installer keywords in script names
+        if find scripts/packaging -type f \( -name "*msix*" -o -name "*inno*" -o -name "*setup*.iss" -o -name "*installer*" \) | grep -q .; then
+          echo "❌ ERROR: Found MSIX/installer related script files:"
+          find scripts/packaging -type f \( -name "*msix*" -o -name "*inno*" -o -name "*setup*.iss" -o -name "*installer*" \)
+          FOUND_VIOLATIONS=1
+        fi
+        
+        # Check for MSIX build workflows
+        if grep -r "msix\|MSIX\|AppxBundle\|AppxPackage\|UapAppxPackageBuildMode" .github/workflows/ 2>/dev/null | grep -v "portable-only-guard" | grep -q .; then
+          echo "❌ ERROR: Found MSIX references in GitHub workflows:"
+          grep -r "msix\|MSIX\|AppxBundle\|AppxPackage\|UapAppxPackageBuildMode" .github/workflows/ | grep -v "portable-only-guard"
+          FOUND_VIOLATIONS=1
+        fi
+        
+        if [ $FOUND_VIOLATIONS -eq 1 ]; then
+          echo ""
+          echo "=========================================="
+          echo "PORTABLE-ONLY POLICY VIOLATION DETECTED"
+          echo "=========================================="
+          echo ""
+          echo "This repository has adopted a portable-only distribution policy."
+          echo "MSIX packages and EXE installers are no longer supported."
+          echo ""
+          echo "Please remove the flagged files and references."
+          echo "Run: ./scripts/cleanup/portable_only_cleanup.sh"
+          echo ""
+          exit 1
+        fi
+        
+        echo "✅ No MSIX/EXE packaging files detected. Portable-only policy is enforced."
+
   build-and-test:
     name: Build and Test
     runs-on: windows-latest
+    needs: portable-only-guard
     
     steps:
     - name: Checkout code
@@ -53,36 +128,3 @@ jobs:
         name: test-results
         path: |
           **/TestResults/*.trx
-          
-  build-winui-app:
-    name: Build WinUI 3 App
-    runs-on: windows-latest
-    needs: build-and-test
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    - name: Setup .NET
-      uses: actions/setup-dotnet@v4
-      with:
-        dotnet-version: ${{ env.DOTNET_VERSION }}
-        
-    - name: Add MSBuild to PATH
-      uses: microsoft/setup-msbuild@v2
-      
-    - name: Restore NuGet packages
-      run: dotnet restore ${{ env.SOLUTION_FILE }}
-      
-    - name: Build WinUI 3 App (x64)
-      run: msbuild Aura.App/Aura.App.csproj /p:Configuration=Release /p:Platform=x64 /p:AppxBundle=Never /p:UapAppxPackageBuildMode=SideloadOnly /restore
-      
-    - name: Upload MSIX Package
-      if: success()
-      uses: actions/upload-artifact@v4
-      with:
-        name: msix-package
-        path: |
-          Aura.App/AppPackages/**/*.msix
-          Aura.App/bin/x64/Release/**/*.msix
-        if-no-files-found: warn
