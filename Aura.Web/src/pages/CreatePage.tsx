@@ -15,6 +15,7 @@ import {
 } from '@fluentui/react-components';
 import { Play24Regular } from '@fluentui/react-icons';
 import type { Brief, PlanSpec } from '../types';
+import { PreflightModal } from '../components/PreflightModal';
 
 const useStyles = makeStyles({
   container: {
@@ -71,6 +72,7 @@ export function CreatePage() {
   });
 
   const [generating, setGenerating] = useState(false);
+  const [preflightModalOpen, setPreflightModalOpen] = useState(false);
 
   const handleGenerate = async () => {
     setGenerating(true);
@@ -239,6 +241,13 @@ export function CreatePage() {
                 <Text weight="semibold">Aspect:</Text> <Text>{brief.aspect}</Text>
               </div>
             </div>
+            <div style={{ marginTop: tokens.spacingVerticalL }}>
+              <Button
+                onClick={() => setPreflightModalOpen(true)}
+              >
+                Run Preflight Checks
+              </Button>
+            </div>
           </Card>
         )}
 
@@ -267,6 +276,24 @@ export function CreatePage() {
             </Button>
           )}
         </div>
+
+        <PreflightModal
+          open={preflightModalOpen}
+          onClose={() => setPreflightModalOpen(false)}
+          onAutoSwitchToFree={async () => {
+            // Switch to Free-Only profile
+            try {
+              await fetch('/api/profiles/apply', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ profileName: 'Free-Only' }),
+              });
+              alert('Switched to Free-Only profile. Please run preflight checks again.');
+            } catch (error) {
+              console.error('Error switching to Free-Only profile:', error);
+            }
+          }}
+        />
       </div>
     </div>
   );
