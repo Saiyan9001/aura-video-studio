@@ -202,17 +202,22 @@ Write-Host "Portable ZIP:  $zipPath" -ForegroundColor White
 Write-Host "Size:          $([math]::Round((Get-Item $zipPath).Length / 1MB, 2)) MB" -ForegroundColor White
 Write-Host "SHA-256:       $($hash.Hash)" -ForegroundColor White
 Write-Host ""
-Write-Host "Contents:" -ForegroundColor Cyan
-Write-Host "  /api/*                - Aura.Api binaries" -ForegroundColor White
-Write-Host "  /api/wwwroot/*        - Aura.Web static build" -ForegroundColor White
-Write-Host "  /ffmpeg/ffmpeg.exe    - FFmpeg binary" -ForegroundColor White
-Write-Host "  /ffmpeg/ffprobe.exe   - FFprobe binary" -ForegroundColor White
-Write-Host "  /assets/*             - Default packs, LUTs, fonts" -ForegroundColor White
-Write-Host "  /config/appsettings.json - Configuration" -ForegroundColor White
-Write-Host "  /start_portable.cmd   - Launcher script" -ForegroundColor White
-Write-Host "  /checksums.txt        - SHA256 checksums" -ForegroundColor White
-Write-Host "  /sbom.json            - Software Bill of Materials" -ForegroundColor White
-Write-Host "  /attributions.txt     - License attributions" -ForegroundColor White
+Write-Host "ZIP Contents:" -ForegroundColor Cyan
+Write-Host "  /api/*                    - Aura.Api binaries (self-contained .NET)" -ForegroundColor White
+Write-Host "  /api/wwwroot/*            - Aura.Web static build (React UI)" -ForegroundColor White
+Write-Host "  /ffmpeg/ffmpeg.exe        - FFmpeg binary (if available)" -ForegroundColor White
+Write-Host "  /ffmpeg/ffprobe.exe       - FFprobe binary (if available)" -ForegroundColor White
+Write-Host "  /assets/*                 - Default packs, LUTs, fonts (if available)" -ForegroundColor White
+Write-Host "  /config/appsettings.json  - Configuration with sane defaults" -ForegroundColor White
+Write-Host "  /start_portable.cmd       - Launcher script (waits for healthz)" -ForegroundColor White
+Write-Host "  /checksums.txt            - SHA256 checksum of this ZIP" -ForegroundColor White
+Write-Host "  /sbom.json                - Software Bill of Materials" -ForegroundColor White
+Write-Host "  /attributions.txt         - Third-party license attributions" -ForegroundColor White
+Write-Host "  /README.md                - User guide" -ForegroundColor White
+Write-Host "  /LICENSE                  - License file" -ForegroundColor White
+Write-Host ""
+Write-Host "Note: WPF shell (AuraVideoStudio.exe) is planned for future releases." -ForegroundColor Gray
+Write-Host "      For now, use start_portable.cmd to launch the application." -ForegroundColor Gray
 Write-Host ""
 Write-Host "To test locally:" -ForegroundColor Cyan
 Write-Host "  1. Extract the ZIP to a folder" -ForegroundColor White
