@@ -109,3 +109,5 @@ Aura.Web/dist/
 # Test artifacts
 test-portable/
 output/
+node_modules/
+dist/
