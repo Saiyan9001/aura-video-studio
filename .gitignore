@@ -111,3 +111,4 @@ test-portable/
 output/
 node_modules/
 dist/
+logs/
