@@ -1,4 +1,6 @@
 using Aura.Api.Helpers;
+using Aura.Api.Logging;
+using Aura.Api.Middleware;
 using Aura.Api.Serialization;
 using Aura.Core.Hardware;
 using Aura.Core.Models;
@@ -29,14 +31,11 @@ builder.Services.ConfigureHttpJsonOptions(options =>
     options.SerializerOptions.PropertyNameCaseInsensitive = true;
 });
 
-// Configure Serilog
-Log.Logger = new LoggerConfiguration()
-    .ReadFrom.Configuration(builder.Configuration)
-    .WriteTo.Console()
-    .WriteTo.File("logs/aura-api-.log", 
-        rollingInterval: RollingInterval.Day,
-        retainedFileCountLimit: 7)
-    .CreateLogger();
+// Configure Serilog with enhanced logging and correlation support
+Log.Logger = SerilogConfig.ConfigureLogger(
+    new LoggerConfiguration(),
+    builder.Configuration
+).CreateLogger();
 
 builder.Host.UseSerilog();
 
@@ -137,6 +136,9 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseCors();
+
+// Add correlation ID middleware (before routing)
+app.UseMiddleware<CorrelationIdMiddleware>();
 
 // Serve static files from wwwroot (must be before routing)
 var wwwrootPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
@@ -790,6 +792,55 @@ apiGroup.MapGet("/logs/stream", async (HttpContext context) =>
     }
 })
 .WithName("StreamLogs")
+.WithOpenApi();
+
+// Log viewer endpoint - get recent logs with filtering
+apiGroup.MapGet("/logs", async (
+    [FromQuery] int? maxEntries,
+    [FromQuery] string? level,
+    [FromQuery] string? search,
+    [FromQuery] DateTime? startDate,
+    [FromQuery] DateTime? endDate) =>
+{
+    try
+    {
+        var logReader = new Aura.Api.Logging.LogReaderService();
+        var logs = await logReader.GetLogsAsync(
+            maxEntries: maxEntries ?? 500,
+            level: level,
+            search: search,
+            startDate: startDate,
+            endDate: endDate
+        );
+        
+        return Results.Ok(new { success = true, logs, count = logs.Count });
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "Error reading logs");
+        return Results.Problem("Error reading logs", statusCode: 500);
+    }
+})
+.WithName("GetLogs")
+.WithOpenApi();
+
+// Log stats endpoint
+apiGroup.MapGet("/logs/stats", async () =>
+{
+    try
+    {
+        var logReader = new Aura.Api.Logging.LogReaderService();
+        var stats = await logReader.GetStatsAsync();
+        
+        return Results.Ok(new { success = true, stats });
+    }
+    catch (Exception ex)
+    {
+        Log.Error(ex, "Error getting log stats");
+        return Results.Problem("Error getting log stats", statusCode: 500);
+    }
+})
+.WithName("GetLogStats")
 .WithOpenApi();
 
 

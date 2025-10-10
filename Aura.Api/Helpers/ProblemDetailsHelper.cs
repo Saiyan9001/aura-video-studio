@@ -46,19 +46,33 @@ public static class ProblemDetailsHelper
     };
 
     /// <summary>
-    /// Creates a ProblemDetails result for script generation errors
+    /// Creates a ProblemDetails result for script generation errors with correlation ID support
     /// </summary>
-    public static IResult CreateScriptError(string errorCode, string detail)
+    public static IResult CreateScriptError(string errorCode, string detail, HttpContext? context = null)
     {
+        // Extract correlation ID from context if available
+        var correlationId = context?.Response.Headers["X-Correlation-ID"].FirstOrDefault();
+
         if (!ErrorDefinitions.TryGetValue(errorCode, out var errorDef))
         {
+            // Log unknown error code
+            Serilog.Log.Error("Unknown error code {ErrorCode}: {Detail}", errorCode, detail);
+            
             // Unknown error code - use generic error
-            return Results.Problem(
-                detail: detail,
-                statusCode: 500,
-                title: "Script Generation Failed",
-                type: $"https://docs.aura.studio/errors/{errorCode}"
-            );
+            var problemDetails = new Microsoft.AspNetCore.Mvc.ProblemDetails
+            {
+                Detail = detail,
+                Status = 500,
+                Title = "Script Generation Failed",
+                Type = $"https://docs.aura.studio/errors/{errorCode}"
+            };
+            
+            if (!string.IsNullOrEmpty(correlationId))
+            {
+                problemDetails.Extensions["correlationId"] = correlationId;
+            }
+            
+            return Results.Problem(problemDetails);
         }
 
         var (title, statusCode, guidance) = errorDef;
@@ -70,12 +84,24 @@ public static class ProblemDetailsHelper
             fullDetail = $"{detail}\n\nAction: {guidance}";
         }
 
-        return Results.Problem(
-            detail: fullDetail,
-            statusCode: statusCode,
-            title: title,
-            type: $"https://docs.aura.studio/errors/{errorCode}"
-        );
+        // Log error with correlation ID and error code
+        Serilog.Log.Error("API Error {ErrorCode} ({Title}): {Detail}", errorCode, title, detail);
+
+        var result = new Microsoft.AspNetCore.Mvc.ProblemDetails
+        {
+            Detail = fullDetail,
+            Status = statusCode,
+            Title = title,
+            Type = $"https://docs.aura.studio/errors/{errorCode}"
+        };
+
+        // Add correlation ID to extensions if available
+        if (!string.IsNullOrEmpty(correlationId))
+        {
+            result.Extensions["correlationId"] = correlationId;
+        }
+
+        return Results.Problem(result);
     }
 
     /// <summary>
