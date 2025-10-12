@@ -190,6 +190,18 @@ builder.Services.AddSingleton<Aura.Core.Downloads.EngineInstaller>(sp =>
     return new Aura.Core.Downloads.EngineInstaller(logger, httpClient, installRoot);
 });
 
+// Register ModelInstaller for managing models and voices
+builder.Services.AddHttpClient<Aura.Core.Downloads.ModelInstaller>();
+builder.Services.AddSingleton<Aura.Core.Downloads.ModelInstaller>(sp =>
+{
+    var logger = sp.GetRequiredService<ILogger<Aura.Core.Downloads.ModelInstaller>>();
+    var httpClient = sp.GetRequiredService<IHttpClientFactory>().CreateClient();
+    var modelsRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Aura", "Tools");
+    var downloaderLogger = sp.GetRequiredService<ILogger<Aura.Core.Downloads.HttpDownloader>>();
+    var downloader = new Aura.Core.Downloads.HttpDownloader(downloaderLogger, httpClient);
+    return new Aura.Core.Downloads.ModelInstaller(logger, downloader, modelsRoot);
+});
+
 builder.Services.AddSingleton<Aura.Core.Runtime.ExternalProcessManager>(sp =>
 {
     var logger = sp.GetRequiredService<ILogger<Aura.Core.Runtime.ExternalProcessManager>>();
