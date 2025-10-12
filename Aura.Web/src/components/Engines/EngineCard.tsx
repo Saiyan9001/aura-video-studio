@@ -33,9 +33,11 @@ import {
   Folder24Regular,
   MoreHorizontal24Regular,
   Info24Regular,
+  DocumentFolder24Regular,
 } from '@fluentui/react-icons';
 import type { EngineManifestEntry, EngineStatus } from '../../types/engines';
 import { useEnginesStore } from '../../state/engines';
+import { ModelManager } from './ModelManager';
 
 const useStyles = makeStyles({
   card: {
@@ -122,6 +124,7 @@ export function EngineCard({ engine }: EngineCardProps) {
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [diagnosticsData, setDiagnosticsData] = useState<any>(null);
   const [isLoadingDiagnostics, setIsLoadingDiagnostics] = useState(false);
+  const [showModelManager, setShowModelManager] = useState(false);
   
   const {
     installEngine,
@@ -381,6 +384,17 @@ export function EngineCard({ engine }: EngineCardProps) {
             )}
 
             {isInstalled && (
+              <Button
+                appearance="subtle"
+                icon={<DocumentFolder24Regular />}
+                onClick={() => setShowModelManager(true)}
+                title="Manage models and voices"
+              >
+                Models & Voices
+              </Button>
+            )}
+
+            {isInstalled && (
               <Menu>
                 <MenuTrigger disableButtonEnhancement>
                   <Button
@@ -565,6 +579,14 @@ export function EngineCard({ engine }: EngineCardProps) {
           </DialogBody>
         </DialogSurface>
       </Dialog>
+
+      {/* Models & Voices Manager */}
+      <ModelManager
+        open={showModelManager}
+        onOpenChange={setShowModelManager}
+        engineId={engine.id}
+        engineName={engine.name}
+      />
     </Card>
   );
 }
