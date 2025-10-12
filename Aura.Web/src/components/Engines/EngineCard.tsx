@@ -33,6 +33,8 @@ import {
   Folder24Regular,
   MoreHorizontal24Regular,
   Info24Regular,
+  Copy24Regular,
+  ChevronDown24Regular,
 } from '@fluentui/react-icons';
 import type { EngineManifestEntry, EngineStatus } from '../../types/engines';
 import { useEnginesStore } from '../../state/engines';
@@ -122,6 +124,10 @@ export function EngineCard({ engine }: EngineCardProps) {
   const [showDiagnostics, setShowDiagnostics] = useState(false);
   const [diagnosticsData, setDiagnosticsData] = useState<any>(null);
   const [isLoadingDiagnostics, setIsLoadingDiagnostics] = useState(false);
+  const [showCustomUrlDialog, setShowCustomUrlDialog] = useState(false);
+  const [customUrl, setCustomUrl] = useState('');
+  const [showLocalFileDialog, setShowLocalFileDialog] = useState(false);
+  const [localFilePath, setLocalFilePath] = useState('');
   
   const {
     installEngine,
@@ -132,6 +138,8 @@ export function EngineCard({ engine }: EngineCardProps) {
     stopEngine,
     fetchEngineStatus,
     getDiagnostics,
+    getProvenance,
+    openFolder,
   } = useEnginesStore();
 
   useEffect(() => {
@@ -160,6 +168,44 @@ export function EngineCard({ engine }: EngineCardProps) {
       await loadStatus();
     } catch (error) {
       console.error('Installation failed:', error);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleInstallWithCustomUrl = async () => {
+    if (!customUrl) {
+      alert('Please enter a custom URL');
+      return;
+    }
+    setIsProcessing(true);
+    setShowCustomUrlDialog(false);
+    try {
+      await installEngine(engine.id, undefined, undefined, customUrl);
+      await loadStatus();
+      setCustomUrl('');
+    } catch (error) {
+      console.error('Installation from custom URL failed:', error);
+      alert(`Installation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleInstallFromLocalFile = async () => {
+    if (!localFilePath) {
+      alert('Please enter a local file path');
+      return;
+    }
+    setIsProcessing(true);
+    setShowLocalFileDialog(false);
+    try {
+      await installEngine(engine.id, undefined, undefined, undefined, localFilePath);
+      await loadStatus();
+      setLocalFilePath('');
+    } catch (error) {
+      console.error('Installation from local file failed:', error);
+      alert(`Installation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
     } finally {
       setIsProcessing(false);
     }
@@ -231,10 +277,22 @@ export function EngineCard({ engine }: EngineCardProps) {
     }
   };
 
-  const handleOpenFolder = () => {
+  const handleOpenFolder = async () => {
+    try {
+      await openFolder(engine.id);
+    } catch (error) {
+      console.error('Failed to open folder:', error);
+      // Fallback: show the path
+      if (engine.installPath) {
+        alert(`Install path: ${engine.installPath}`);
+      }
+    }
+  };
+
+  const handleCopyPath = () => {
     if (engine.installPath) {
-      // This would need to be implemented via an API endpoint that opens the folder
-      alert(`Install path: ${engine.installPath}`);
+      navigator.clipboard.writeText(engine.installPath);
+      alert('Path copied to clipboard!');
     }
   };
 
@@ -346,15 +404,33 @@ export function EngineCard({ engine }: EngineCardProps) {
         <div className={styles.row}>
           <div className={styles.actions}>
             {!isInstalled && (
-              <Button
-                appearance="primary"
-                icon={<ArrowDownload24Regular />}
-                onClick={handleInstall}
-                disabled={isProcessing}
-                title={engine.gatingReason || undefined}
-              >
-                {isProcessing ? <Spinner size="tiny" /> : engine.isGated && !engine.canAutoStart ? 'Install anyway (for later)' : 'Install'}
-              </Button>
+              <Menu>
+                <MenuTrigger disableButtonEnhancement>
+                  <Button
+                    appearance="primary"
+                    icon={<ArrowDownload24Regular />}
+                    iconPosition="before"
+                    disabled={isProcessing}
+                    title={engine.gatingReason || undefined}
+                  >
+                    {isProcessing ? <Spinner size="tiny" /> : engine.isGated && !engine.canAutoStart ? 'Install anyway (for later)' : 'Install'}
+                    <ChevronDown24Regular style={{ marginLeft: '4px' }} />
+                  </Button>
+                </MenuTrigger>
+                <MenuPopover>
+                  <MenuList>
+                    <MenuItem onClick={handleInstall}>
+                      Install from Official Mirrors
+                    </MenuItem>
+                    <MenuItem onClick={() => setShowCustomUrlDialog(true)}>
+                      Install from Custom URL...
+                    </MenuItem>
+                    <MenuItem onClick={() => setShowLocalFileDialog(true)}>
+                      Install from Local File...
+                    </MenuItem>
+                  </MenuList>
+                </MenuPopover>
+              </Menu>
             )}
             
             {isInstalled && !isRunning && (
@@ -435,7 +511,102 @@ export function EngineCard({ engine }: EngineCardProps) {
             {status.logsPath && ` • Logs: ${status.logsPath}`}
           </Text>
         )}
+
+        {isInstalled && engine.installPath && (
+          <div className={styles.row}>
+            <Text className={styles.metadata} style={{ flex: 1, wordBreak: 'break-all' }}>
+              📁 {engine.installPath}
+            </Text>
+            <div className={styles.actions}>
+              <Button
+                appearance="subtle"
+                size="small"
+                icon={<Copy24Regular />}
+                onClick={handleCopyPath}
+                title="Copy path to clipboard"
+              />
+              <Button
+                appearance="subtle"
+                size="small"
+                icon={<Folder24Regular />}
+                onClick={handleOpenFolder}
+                title="Open folder in file explorer"
+              />
+            </div>
+          </div>
+        )}
       </CardPreview>
+
+      {/* Custom URL Dialog */}
+      <Dialog open={showCustomUrlDialog} onOpenChange={(_, data) => setShowCustomUrlDialog(data.open)}>
+        <DialogSurface>
+          <DialogBody>
+            <DialogTitle>Install from Custom URL</DialogTitle>
+            <DialogContent>
+              <Text block style={{ marginBottom: tokens.spacingVerticalM }}>
+                Enter a custom download URL for {engine.name}. The file will be verified using the expected checksum.
+              </Text>
+              <input
+                type="text"
+                value={customUrl}
+                onChange={(e) => setCustomUrl(e.target.value)}
+                placeholder="https://example.com/engine-file.zip"
+                style={{
+                  width: '100%',
+                  padding: '8px',
+                  borderRadius: '4px',
+                  border: `1px solid ${tokens.colorNeutralStroke1}`,
+                }}
+              />
+            </DialogContent>
+            <DialogActions>
+              <Button appearance="secondary" onClick={() => setShowCustomUrlDialog(false)}>
+                Cancel
+              </Button>
+              <Button appearance="primary" onClick={handleInstallWithCustomUrl}>
+                Install
+              </Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
+
+      {/* Local File Dialog */}
+      <Dialog open={showLocalFileDialog} onOpenChange={(_, data) => setShowLocalFileDialog(data.open)}>
+        <DialogSurface>
+          <DialogBody>
+            <DialogTitle>Install from Local File</DialogTitle>
+            <DialogContent>
+              <Text block style={{ marginBottom: tokens.spacingVerticalM }}>
+                Enter the path to a local archive file for {engine.name}. The file will be verified using the expected checksum if available.
+              </Text>
+              <input
+                type="text"
+                value={localFilePath}
+                onChange={(e) => setLocalFilePath(e.target.value)}
+                placeholder="C:\Downloads\engine-file.zip"
+                style={{
+                  width: '100%',
+                  padding: '8px',
+                  borderRadius: '4px',
+                  border: `1px solid ${tokens.colorNeutralStroke1}`,
+                }}
+              />
+              <Text block style={{ marginTop: tokens.spacingVerticalS, fontSize: tokens.fontSizeBase200, color: tokens.colorNeutralForeground3 }}>
+                Note: Enter the full absolute path to the file on your local system.
+              </Text>
+            </DialogContent>
+            <DialogActions>
+              <Button appearance="secondary" onClick={() => setShowLocalFileDialog(false)}>
+                Cancel
+              </Button>
+              <Button appearance="primary" onClick={handleInstallFromLocalFile}>
+                Import
+              </Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
 
       {/* Diagnostics Dialog */}
       <Dialog open={showDiagnostics} onOpenChange={(_, data) => setShowDiagnostics(data.open)}>
@@ -519,6 +690,30 @@ export function EngineCard({ engine }: EngineCardProps) {
                       <Text className={styles.diagnosticsLabel}>Download URL:</Text>
                       <Text style={{ fontFamily: 'monospace', fontSize: '12px', wordBreak: 'break-all' }}>
                         {diagnosticsData.failedUrl}
+                      </Text>
+                    </div>
+                  )}
+                  
+                  {diagnosticsData.issues && diagnosticsData.issues.some((issue: string) => 
+                    issue.includes('404') || issue.includes('Network') || issue.includes('download')
+                  ) && (
+                    <div style={{ 
+                      padding: tokens.spacingVerticalS, 
+                      backgroundColor: tokens.colorPaletteBlueBorderActive,
+                      borderRadius: tokens.borderRadiusMedium,
+                      marginTop: tokens.spacingVerticalS 
+                    }}>
+                      <Text weight="semibold" block style={{ marginBottom: tokens.spacingVerticalXS }}>
+                        💡 Alternative Installation Options:
+                      </Text>
+                      <Text block style={{ marginTop: tokens.spacingVerticalXXS }}>
+                        • The system will automatically try mirror servers
+                      </Text>
+                      <Text block style={{ marginTop: tokens.spacingVerticalXXS }}>
+                        • Use "Install from Custom URL" if you have an alternative download link
+                      </Text>
+                      <Text block style={{ marginTop: tokens.spacingVerticalXXS }}>
+                        • Use "Install from Local File" if you've already downloaded the file
                       </Text>
                     </div>
                   )}

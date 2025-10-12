@@ -55,6 +55,18 @@ export interface InstallRequest {
   engineId: string;
   version?: string;
   port?: number;
+  customUrl?: string;
+  localFilePath?: string;
+}
+
+export interface InstallProvenance {
+  engineId: string;
+  version: string;
+  installedAt: string;
+  installPath: string;
+  source: 'Mirror' | 'CustomUrl' | 'LocalFile';
+  url: string;
+  sha256: string;
 }
 
 export interface StartRequest {

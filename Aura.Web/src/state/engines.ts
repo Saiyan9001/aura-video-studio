@@ -10,7 +10,7 @@ interface EnginesState {
   // Actions
   fetchEngines: () => Promise<void>;
   fetchEngineStatus: (engineId: string) => Promise<void>;
-  installEngine: (engineId: string, version?: string, port?: number) => Promise<void>;
+  installEngine: (engineId: string, version?: string, port?: number, customUrl?: string, localFilePath?: string) => Promise<void>;
   verifyEngine: (engineId: string) => Promise<any>;
   repairEngine: (engineId: string) => Promise<void>;
   removeEngine: (engineId: string) => Promise<void>;
@@ -18,6 +18,8 @@ interface EnginesState {
   stopEngine: (engineId: string) => Promise<void>;
   refreshStatus: (engineId: string) => Promise<void>;
   getDiagnostics: (engineId: string) => Promise<any>;
+  getProvenance: (engineId: string) => Promise<any>;
+  openFolder: (engineId: string) => Promise<void>;
 }
 
 export const useEnginesStore = create<EnginesState>((set, get) => ({
@@ -75,13 +77,13 @@ export const useEnginesStore = create<EnginesState>((set, get) => ({
     }
   },
 
-  installEngine: async (engineId: string, version?: string, port?: number) => {
+  installEngine: async (engineId: string, version?: string, port?: number, customUrl?: string, localFilePath?: string) => {
     set({ isLoading: true, error: null });
     try {
       const response = await fetch('http://127.0.0.1:5005/api/engines/install', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ engineId, version, port }),
+        body: JSON.stringify({ engineId, version, port, customUrl, localFilePath }),
       });
       
       if (!response.ok) {
@@ -242,6 +244,41 @@ export const useEnginesStore = create<EnginesState>((set, get) => ({
       return result;
     } catch (error) {
       console.error(`Failed to get diagnostics for ${engineId}:`, error);
+      throw error;
+    }
+  },
+
+  getProvenance: async (engineId: string) => {
+    try {
+      const response = await fetch(`http://127.0.0.1:5005/api/engines/provenance?engineId=${engineId}`);
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to get provenance');
+      }
+      
+      const result = await response.json();
+      return result;
+    } catch (error) {
+      console.error(`Failed to get provenance for ${engineId}:`, error);
+      throw error;
+    }
+  },
+
+  openFolder: async (engineId: string) => {
+    try {
+      const response = await fetch('http://127.0.0.1:5005/api/engines/open-folder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ engineId }),
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to open folder');
+      }
+    } catch (error) {
+      console.error(`Failed to open folder for ${engineId}:`, error);
       throw error;
     }
   },
