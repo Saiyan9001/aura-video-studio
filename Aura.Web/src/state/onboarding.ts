@@ -43,7 +43,10 @@ export interface OnboardingState {
     required: boolean;
     installed: boolean;
     installing: boolean;
+    skipped: boolean;
+    existingPath?: string;
   }>;
+  showingPathPicker?: string; // engineId for which path picker is shown
 }
 
 export const initialOnboardingState: OnboardingState = {
@@ -55,10 +58,12 @@ export const initialOnboardingState: OnboardingState = {
   isDetectingHardware: false,
   hardware: null,
   installItems: [
-    { id: 'ffmpeg', name: 'FFmpeg (Video encoding)', required: true, installed: false, installing: false },
-    { id: 'ollama', name: 'Ollama (Local AI)', required: false, installed: false, installing: false },
-    { id: 'stable-diffusion', name: 'Stable Diffusion WebUI', required: false, installed: false, installing: false },
+    { id: 'ffmpeg', name: 'FFmpeg (Video encoding)', required: true, installed: false, installing: false, skipped: false },
+    { id: 'ollama', name: 'Ollama (Local AI)', required: false, installed: false, installing: false, skipped: false },
+    { id: 'stable-diffusion', name: 'Stable Diffusion WebUI', required: false, installed: false, installing: false, skipped: false },
+    { id: 'piper', name: 'Piper TTS', required: false, installed: false, installing: false, skipped: false },
   ],
+  showingPathPicker: undefined,
 };
 
 // Action types
@@ -75,6 +80,9 @@ export type OnboardingAction =
   | { type: 'START_INSTALL'; payload: string }
   | { type: 'INSTALL_COMPLETE'; payload: string }
   | { type: 'INSTALL_FAILED'; payload: { itemId: string; error: string } }
+  | { type: 'SKIP_INSTALL'; payload: string }
+  | { type: 'SET_EXISTING_PATH'; payload: { itemId: string; path: string } }
+  | { type: 'SHOW_PATH_PICKER'; payload: string | undefined }
   | { type: 'MARK_READY' }
   | { type: 'RESET_VALIDATION' };
 
@@ -182,6 +190,31 @@ export function onboardingReducer(state: OnboardingState, action: OnboardingActi
       return {
         ...state,
         status: 'ready',
+      };
+
+    case 'SKIP_INSTALL':
+      return {
+        ...state,
+        installItems: state.installItems.map(item =>
+          item.id === action.payload ? { ...item, skipped: true } : item
+        ),
+      };
+
+    case 'SET_EXISTING_PATH':
+      return {
+        ...state,
+        installItems: state.installItems.map(item =>
+          item.id === action.payload.itemId 
+            ? { ...item, existingPath: action.payload.path, installed: true, skipped: false } 
+            : item
+        ),
+        showingPathPicker: undefined,
+      };
+
+    case 'SHOW_PATH_PICKER':
+      return {
+        ...state,
+        showingPathPicker: action.payload,
       };
 
     case 'RESET_VALIDATION':

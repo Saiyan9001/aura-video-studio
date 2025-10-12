@@ -326,4 +326,112 @@ test.describe('First-Run Wizard E2E', () => {
     // Should redirect to home
     await expect(page).toHaveURL('/');
   });
+
+  test('should allow using existing FFmpeg installation', async ({ page }) => {
+    // Mock hardware probe API
+    await page.route('**/api/hardware/probe', (route) => {
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          gpu: 'Intel UHD Graphics',
+          vramGB: 2,
+          enableLocalDiffusion: false,
+        }),
+      });
+    });
+
+    // Mock successful preflight check
+    await page.route('**/api/preflight?profile=Free-Only*', (route) => {
+      route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        headers: { 'X-Correlation-Id': 'test-correlation-789' },
+        body: JSON.stringify({
+          ok: true,
+          stages: [
+            { stage: 'Script', status: 'pass', provider: 'RuleBased', message: 'OK' },
+            { stage: 'TTS', status: 'pass', provider: 'Windows TTS', message: 'OK' },
+            { stage: 'Visuals', status: 'pass', provider: 'Stock', message: 'OK' },
+          ],
+        }),
+      });
+    });
+
+    await page.goto('/onboarding');
+
+    // Step 0: Select Free-Only mode
+    const freeCard = page.locator('text=Free-Only Mode').locator('..');
+    await freeCard.click();
+    await page.getByRole('button', { name: 'Next' }).click();
+
+    // Step 1: Hardware Detection
+    await page.getByRole('button', { name: 'Next' }).click();
+    await expect(page.getByText(/Intel UHD Graphics/)).toBeVisible({ timeout: 5000 });
+    await page.getByRole('button', { name: 'Next' }).click();
+
+    // Step 2: Install Required Components
+    await expect(page.getByRole('heading', { name: 'Install Required Components' })).toBeVisible();
+    
+    // Should see FFmpeg with "Use Existing" button
+    await expect(page.getByText('FFmpeg (Video encoding)')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Use Existing' })).toBeVisible();
+
+    // Click "Use Existing" for FFmpeg
+    await page.getByRole('button', { name: 'Use Existing' }).first().click();
+
+    // Dialog should appear
+    await expect(page.getByRole('dialog')).toBeVisible();
+    await expect(page.getByText('Use Existing Installation')).toBeVisible();
+
+    // Enter a path
+    const pathInput = page.getByPlaceholder(/e.g., C:/);
+    await pathInput.fill('C:\\Tools\\ffmpeg');
+
+    // Confirm
+    await page.getByRole('button', { name: 'Use This Path' }).click();
+
+    // Dialog should close and FFmpeg should be marked as installed
+    await expect(page.getByRole('dialog')).not.toBeVisible();
+    await expect(page.getByText('C:\\Tools\\ffmpeg')).toBeVisible();
+
+    // Continue to validation
+    await page.getByRole('button', { name: 'Next' }).click();
+    await page.getByRole('button', { name: 'Validate' }).click();
+
+    // Should show success
+    await expect(page.getByText('All Set!')).toBeVisible({ timeout: 10000 });
+
+    // Should show "Where are my files?" section
+    await expect(page.getByText('Where are my files?')).toBeVisible();
+    await expect(page.getByText('C:\\Tools\\ffmpeg')).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Open Folder' })).toBeVisible();
+  });
+
+  test('should allow skipping optional components', async ({ page }) => {
+    await page.goto('/onboarding');
+
+    // Navigate to components step
+    await page.getByRole('button', { name: 'Next' }).click();
+    await page.getByRole('button', { name: 'Next' }).click();
+
+    // Step 2: Components
+    await expect(page.getByRole('heading', { name: 'Install Required Components' })).toBeVisible();
+
+    // Optional items should have "Skip for now" button
+    const skipButtons = page.getByRole('button', { name: 'Skip for now' });
+    const count = await skipButtons.count();
+    expect(count).toBeGreaterThan(0);
+
+    // Skip Ollama (optional)
+    const ollamaCard = page.locator('text=Ollama').locator('..');
+    await ollamaCard.getByRole('button', { name: 'Skip for now' }).click();
+
+    // Should show "Skipped" badge
+    await expect(ollamaCard.getByText('Skipped')).toBeVisible();
+
+    // Required item (FFmpeg) should NOT have skip button
+    const ffmpegCard = page.locator('text=FFmpeg').locator('..');
+    await expect(ffmpegCard.getByRole('button', { name: 'Skip for now' })).not.toBeVisible();
+  });
 });

@@ -82,6 +82,114 @@ If your GPU doesn't meet these requirements, Aura can use:
 
 **Note**: Hardware requirements are guidance, not hard blocks. You can install and experiment with any engine.
 
+## Where Are My Files?
+
+Understanding where Aura stores engines, models, and generated content is essential for managing your installation and adding custom models.
+
+### Default Installation Paths
+
+**Windows:**
+- **FFmpeg**: `C:\Users\[YourUser]\AppData\Local\Aura\Tools\ffmpeg\`
+- **Stable Diffusion WebUI**: `C:\Users\[YourUser]\AppData\Local\Aura\Engines\stable-diffusion-webui\`
+- **ComfyUI**: `C:\Users\[YourUser]\AppData\Local\Aura\Engines\comfyui\`
+- **Piper TTS**: `C:\Users\[YourUser]\AppData\Local\Aura\Engines\piper\`
+- **Ollama**: `C:\Users\[YourUser]\.ollama\` (Ollama's default location)
+
+**Linux:**
+- **FFmpeg**: `~/.local/share/aura/tools/ffmpeg/`
+- **Stable Diffusion WebUI**: `~/.local/share/aura/engines/stable-diffusion-webui/`
+- **ComfyUI**: `~/.local/share/aura/engines/comfyui/`
+- **Piper TTS**: `~/.local/share/aura/engines/piper/`
+- **Ollama**: `~/.ollama/` (Ollama's default location)
+
+### Opening Installation Folders
+
+**From Onboarding Wizard:**
+- Complete the First-Run Wizard
+- On the final "All Set!" screen, find the "Where are my files?" section
+- Click "Open Folder" next to any installed engine
+
+**From Download Center:**
+- Navigate to Settings → Downloads or the Engines page
+- Right-click any installed engine
+- Select "Open Folder" from the menu
+
+**From File Explorer (Windows):**
+1. Press `Win + R` to open Run dialog
+2. Type `%LOCALAPPDATA%\Aura` and press Enter
+3. Navigate to `Tools` or `Engines` subfolder
+
+**From Terminal (Linux):**
+```bash
+cd ~/.local/share/aura
+ls -la tools/     # View installed tools
+ls -la engines/   # View installed engines
+```
+
+### Adding Custom Models
+
+**Stable Diffusion Models:**
+Place `.safetensors` or `.ckpt` files in:
+- `[SD Install Path]/models/Stable-diffusion/`
+- Example: `C:\Users\YourUser\AppData\Local\Aura\Engines\stable-diffusion-webui\models\Stable-diffusion\mymodel.safetensors`
+
+**ComfyUI Models:**
+- Checkpoints: `[ComfyUI Path]/models/checkpoints/`
+- LoRAs: `[ComfyUI Path]/models/loras/`
+- VAE: `[ComfyUI Path]/models/vae/`
+
+**Piper Voices:**
+Place `.onnx` voice files and `.json` configs in:
+- `[Piper Path]/voices/`
+
+**Ollama Models:**
+Use Ollama CLI to download models:
+```bash
+ollama pull llama2
+ollama pull mistral
+```
+
+### Generated Content
+
+**Video Projects:**
+- **Windows**: `C:\Users\[YourUser]\Documents\AuraProjects\`
+- **Linux**: `~/Documents/AuraProjects/`
+
+Each project folder contains:
+- `script.json` - Generated script
+- `audio.wav` - Synthesized narration
+- `visuals/` - Generated or downloaded images
+- `output.mp4` - Final rendered video
+
+### Web UI Access
+
+**Stable Diffusion WebUI (A1111):**
+- Default URL: `http://localhost:7860`
+- Click "Open Web UI" in the onboarding wizard or engine card
+
+**ComfyUI:**
+- Default URL: `http://localhost:8188`
+- Click "Open Web UI" button after starting
+
+**Ollama API:**
+- Default URL: `http://localhost:11434`
+- Used automatically by Aura for local script generation
+
+### Backup and Portability
+
+To back up or move your installation:
+
+1. **Copy Engine Folders**: Back up `%LOCALAPPDATA%\Aura\` (Windows) or `~/.local/share/aura/` (Linux)
+2. **Export Settings**: Settings → Export Configuration
+3. **Backup Projects**: Copy `Documents\AuraProjects\`
+
+To restore on another machine:
+1. Install Aura Video Studio
+2. Copy backed-up folders to the same locations
+3. Import configuration from Settings
+
+**Note**: Models can be large (2-7GB each). Consider using symbolic links or external drives for model libraries.
+
 ## Installation
 
 ### Portable Installation

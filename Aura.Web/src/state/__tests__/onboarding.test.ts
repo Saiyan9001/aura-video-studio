@@ -370,3 +370,77 @@ describe('State machine transitions', () => {
     expect(state.status).toBe('installed');
   });
 });
+
+describe('Path picker and skip functionality', () => {
+  it('should handle SKIP_INSTALL action', () => {
+    const state = onboardingReducer(initialOnboardingState, {
+      type: 'SKIP_INSTALL',
+      payload: 'ollama',
+    });
+
+    const ollamaItem = state.installItems.find(item => item.id === 'ollama');
+    expect(ollamaItem?.skipped).toBe(true);
+    expect(ollamaItem?.installed).toBe(false);
+  });
+
+  it('should handle SET_EXISTING_PATH action', () => {
+    const state = onboardingReducer(initialOnboardingState, {
+      type: 'SET_EXISTING_PATH',
+      payload: { itemId: 'ffmpeg', path: 'C:\\Tools\\ffmpeg' },
+    });
+
+    const ffmpegItem = state.installItems.find(item => item.id === 'ffmpeg');
+    expect(ffmpegItem?.existingPath).toBe('C:\\Tools\\ffmpeg');
+    expect(ffmpegItem?.installed).toBe(true);
+    expect(ffmpegItem?.skipped).toBe(false);
+    expect(state.showingPathPicker).toBeUndefined();
+  });
+
+  it('should handle SHOW_PATH_PICKER action', () => {
+    let state = onboardingReducer(initialOnboardingState, {
+      type: 'SHOW_PATH_PICKER',
+      payload: 'stable-diffusion',
+    });
+    expect(state.showingPathPicker).toBe('stable-diffusion');
+
+    // Close path picker
+    state = onboardingReducer(state, {
+      type: 'SHOW_PATH_PICKER',
+      payload: undefined,
+    });
+    expect(state.showingPathPicker).toBeUndefined();
+  });
+
+  it('should use existing path and close picker on SET_EXISTING_PATH', () => {
+    let state = onboardingReducer(initialOnboardingState, {
+      type: 'SHOW_PATH_PICKER',
+      payload: 'piper',
+    });
+    expect(state.showingPathPicker).toBe('piper');
+
+    state = onboardingReducer(state, {
+      type: 'SET_EXISTING_PATH',
+      payload: { itemId: 'piper', path: '/usr/local/bin/piper' },
+    });
+
+    const piperItem = state.installItems.find(item => item.id === 'piper');
+    expect(piperItem?.existingPath).toBe('/usr/local/bin/piper');
+    expect(piperItem?.installed).toBe(true);
+    expect(state.showingPathPicker).toBeUndefined();
+  });
+
+  it('should allow skipping non-required items only', () => {
+    const state = initialOnboardingState;
+    
+    // Check that ffmpeg is required
+    const ffmpeg = state.installItems.find(item => item.id === 'ffmpeg');
+    expect(ffmpeg?.required).toBe(true);
+
+    // Check that other items are optional
+    const ollama = state.installItems.find(item => item.id === 'ollama');
+    expect(ollama?.required).toBe(false);
+
+    const sd = state.installItems.find(item => item.id === 'stable-diffusion');
+    expect(sd?.required).toBe(false);
+  });
+});

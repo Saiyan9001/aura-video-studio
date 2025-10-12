@@ -1,4 +1,4 @@
-import { useEffect, useReducer } from 'react';
+import { useEffect, useReducer, useState } from 'react';
 import {
   makeStyles,
   tokens,
@@ -10,6 +10,14 @@ import {
   Card,
   Badge,
   Spinner,
+  Input,
+  Label,
+  Dialog,
+  DialogSurface,
+  DialogBody,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
 } from '@fluentui/react-components';
 import {
   Checkmark24Regular,
@@ -19,6 +27,9 @@ import {
   Settings24Regular,
   VideoClip24Regular,
   Warning24Regular,
+  Folder24Regular,
+  FolderOpen24Regular,
+  Globe24Regular,
 } from '@fluentui/react-icons';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -121,12 +132,28 @@ const useStyles = makeStyles({
     alignItems: 'center',
     gap: tokens.spacingHorizontalM,
   },
+  installActions: {
+    display: 'flex',
+    gap: tokens.spacingHorizontalS,
+    flexWrap: 'wrap',
+  },
+  filesSection: {
+    padding: tokens.spacingVerticalL,
+    backgroundColor: tokens.colorNeutralBackground2,
+    borderRadius: tokens.borderRadiusMedium,
+  },
+  filePath: {
+    fontFamily: 'monospace',
+    fontSize: tokens.fontSizeBase200,
+    color: tokens.colorNeutralForeground3,
+  },
 });
 
 export function FirstRunWizard() {
   const styles = useStyles();
   const navigate = useNavigate();
   const [state, dispatch] = useReducer(onboardingReducer, initialOnboardingState);
+  const [pathPickerInput, setPathPickerInput] = useState('');
 
   const totalSteps = 4;
 
@@ -341,6 +368,34 @@ export function FirstRunWizard() {
     </>
   );
 
+  const handleUseExistingPath = (itemId: string) => {
+    dispatch({ type: 'SHOW_PATH_PICKER', payload: itemId });
+  };
+
+  const handleConfirmPath = () => {
+    if (state.showingPathPicker && pathPickerInput) {
+      dispatch({ 
+        type: 'SET_EXISTING_PATH', 
+        payload: { itemId: state.showingPathPicker, path: pathPickerInput } 
+      });
+      setPathPickerInput('');
+    }
+  };
+
+  const handleSkipItem = (itemId: string) => {
+    dispatch({ type: 'SKIP_INSTALL', payload: itemId });
+  };
+
+  const handleOpenFolder = (path: string) => {
+    // This would ideally call an API to open the folder
+    alert(`Folder location: ${path}\n\nOn Windows, you can copy this path and paste it in File Explorer.`);
+  };
+
+  const handleOpenWebUI = (_engineId: string, port?: number) => {
+    const url = `http://localhost:${port || 7860}`;
+    window.open(url, '_blank');
+  };
+
   const renderStep2 = () => (
     <>
       <Title2>Install Required Components</Title2>
@@ -354,20 +409,46 @@ export function FirstRunWizard() {
                 <Checkmark24Regular style={{ color: tokens.colorPaletteGreenForeground1 }} />
               ) : item.installing ? (
                 <Spinner size="tiny" />
+              ) : item.skipped ? (
+                <Badge size="small" appearance="outline">Skipped</Badge>
               ) : null}
             </div>
             <div style={{ flex: 1 }}>
               <Text weight="semibold">{item.name}</Text>
               {item.required && <Badge size="small" color="danger">Required</Badge>}
+              {item.existingPath && (
+                <Text size={200} block className={styles.filePath}>
+                  Path: {item.existingPath}
+                </Text>
+              )}
             </div>
-            {!item.installed && !item.installing && (
-              <Button
-                size="small"
-                appearance="primary"
-                onClick={() => installItemThunk(item.id, dispatch)}
-              >
-                Install
-              </Button>
+            {!item.installed && !item.installing && !item.skipped && (
+              <div className={styles.installActions}>
+                <Button
+                  size="small"
+                  appearance="primary"
+                  onClick={() => installItemThunk(item.id, dispatch)}
+                >
+                  Install
+                </Button>
+                <Button
+                  size="small"
+                  appearance="secondary"
+                  icon={<Folder24Regular />}
+                  onClick={() => handleUseExistingPath(item.id)}
+                >
+                  Use Existing
+                </Button>
+                {!item.required && (
+                  <Button
+                    size="small"
+                    appearance="subtle"
+                    onClick={() => handleSkipItem(item.id)}
+                  >
+                    Skip for now
+                  </Button>
+                )}
+              </div>
             )}
           </Card>
         ))}
@@ -378,6 +459,56 @@ export function FirstRunWizard() {
           💡 Tip: You can always install additional engines later from the Downloads page.
         </Text>
       </Card>
+
+      {/* Path Picker Dialog */}
+      <Dialog 
+        open={!!state.showingPathPicker} 
+        onOpenChange={(_, data) => {
+          if (!data.open) {
+            dispatch({ type: 'SHOW_PATH_PICKER', payload: undefined });
+            setPathPickerInput('');
+          }
+        }}
+      >
+        <DialogSurface>
+          <DialogBody>
+            <DialogTitle>Use Existing Installation</DialogTitle>
+            <DialogContent>
+              <Text block style={{ marginBottom: tokens.spacingVerticalM }}>
+                Enter the path to your existing {state.installItems.find(i => i.id === state.showingPathPicker)?.name} installation:
+              </Text>
+              <Label>Installation Path:</Label>
+              <Input
+                value={pathPickerInput}
+                onChange={(_, data) => setPathPickerInput(data.value)}
+                placeholder="e.g., C:\Tools\ffmpeg or /usr/local/bin/ffmpeg"
+                style={{ width: '100%' }}
+              />
+              <Text size={200} block style={{ marginTop: tokens.spacingVerticalS, color: tokens.colorNeutralForeground3 }}>
+                Provide the full path to the installation directory or executable.
+              </Text>
+            </DialogContent>
+            <DialogActions>
+              <Button 
+                appearance="secondary" 
+                onClick={() => {
+                  dispatch({ type: 'SHOW_PATH_PICKER', payload: undefined });
+                  setPathPickerInput('');
+                }}
+              >
+                Cancel
+              </Button>
+              <Button 
+                appearance="primary" 
+                onClick={handleConfirmPath}
+                disabled={!pathPickerInput}
+              >
+                Use This Path
+              </Button>
+            </DialogActions>
+          </DialogBody>
+        </DialogSurface>
+      </Dialog>
     </>
   );
 
@@ -393,34 +524,97 @@ export function FirstRunWizard() {
           </div>
         </Card>
       ) : state.status === 'valid' || state.status === 'ready' ? (
-        <div className={styles.successCard}>
-          <Checkmark24Regular style={{ fontSize: '64px', color: tokens.colorPaletteGreenForeground1 }} />
-          <Title1 style={{ marginTop: tokens.spacingVerticalL }}>All Set!</Title1>
-          <Text style={{ marginTop: tokens.spacingVerticalM }}>
-            Your system is ready to create amazing videos. Let's create your first project!
-          </Text>
-          <div style={{ display: 'flex', gap: tokens.spacingHorizontalM, justifyContent: 'center', marginTop: tokens.spacingVerticalXL }}>
-            <Button
-              appearance="primary"
-              size="large"
-              icon={<VideoClip24Regular />}
-              onClick={completeOnboarding}
-            >
-              Create My First Video
-            </Button>
-            <Button
-              appearance="secondary"
-              size="large"
-              icon={<Settings24Regular />}
-              onClick={() => {
-                localStorage.setItem('hasSeenOnboarding', 'true');
-                navigate('/settings');
-              }}
-            >
-              Go to Settings
-            </Button>
+        <>
+          <div className={styles.successCard}>
+            <Checkmark24Regular style={{ fontSize: '64px', color: tokens.colorPaletteGreenForeground1 }} />
+            <Title1 style={{ marginTop: tokens.spacingVerticalL }}>All Set!</Title1>
+            <Text style={{ marginTop: tokens.spacingVerticalM }}>
+              Your system is ready to create amazing videos. Let's create your first project!
+            </Text>
+            <div style={{ display: 'flex', gap: tokens.spacingHorizontalM, justifyContent: 'center', marginTop: tokens.spacingVerticalXL }}>
+              <Button
+                appearance="primary"
+                size="large"
+                icon={<VideoClip24Regular />}
+                onClick={completeOnboarding}
+              >
+                Create My First Video
+              </Button>
+              <Button
+                appearance="secondary"
+                size="large"
+                icon={<Settings24Regular />}
+                onClick={() => {
+                  localStorage.setItem('hasSeenOnboarding', 'true');
+                  navigate('/settings');
+                }}
+              >
+                Go to Settings
+              </Button>
+            </div>
           </div>
-        </div>
+
+          {/* Where are my files section */}
+          <Card className={styles.filesSection}>
+            <Title3 style={{ marginBottom: tokens.spacingVerticalM }}>
+              <FolderOpen24Regular style={{ marginRight: tokens.spacingHorizontalS }} />
+              Where are my files?
+            </Title3>
+            <Text block style={{ marginBottom: tokens.spacingVerticalM }}>
+              Here's where your engines and models are stored:
+            </Text>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: tokens.spacingVerticalS }}>
+              {state.installItems.filter(item => item.installed || item.existingPath).map(item => {
+                const defaultPaths: Record<string, string> = {
+                  'ffmpeg': 'C:\\AuraVideoStudio\\Tools\\ffmpeg',
+                  'ollama': 'C:\\Users\\[YourUser]\\.ollama',
+                  'stable-diffusion': 'C:\\AuraVideoStudio\\Engines\\stable-diffusion-webui',
+                  'piper': 'C:\\AuraVideoStudio\\Engines\\piper',
+                };
+                const path = item.existingPath || defaultPaths[item.id] || 'Not installed';
+                const hasWebUI = item.id === 'stable-diffusion';
+                
+                return (
+                  <Card key={item.id} style={{ padding: tokens.spacingVerticalS }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <Text weight="semibold" block>{item.name}</Text>
+                        <Text size={200} className={styles.filePath} block>
+                          {path}
+                        </Text>
+                      </div>
+                      <div style={{ display: 'flex', gap: tokens.spacingHorizontalS }}>
+                        {item.installed && (
+                          <Button
+                            size="small"
+                            appearance="subtle"
+                            icon={<FolderOpen24Regular />}
+                            onClick={() => handleOpenFolder(path)}
+                          >
+                            Open Folder
+                          </Button>
+                        )}
+                        {hasWebUI && item.installed && (
+                          <Button
+                            size="small"
+                            appearance="subtle"
+                            icon={<Globe24Regular />}
+                            onClick={() => handleOpenWebUI(item.id, 7860)}
+                          >
+                            Open Web UI
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                  </Card>
+                );
+              })}
+            </div>
+            <Text size={200} block style={{ marginTop: tokens.spacingVerticalM, color: tokens.colorNeutralForeground3 }}>
+              💡 Tip: To add more models, place them in the respective folders above. For Stable Diffusion, models go in [install]/models/Stable-diffusion/
+            </Text>
+          </Card>
+        </>
       ) : state.status === 'invalid' && state.lastValidation ? (
         <>
           <Card className={styles.errorCard}>
