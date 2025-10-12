@@ -70,6 +70,51 @@ public class EngineInstallerTests : IDisposable
     }
 
     [Fact]
+    public async Task ReadProvenanceAsync_Should_ReturnProvenance_WhenFileExists()
+    {
+        // Arrange
+        var installer = new EngineInstaller(_logger, _httpClient, _installRoot);
+        var enginePath = installer.GetInstallPath("test-engine");
+        Directory.CreateDirectory(enginePath);
+        
+        var provenance = new InstallProvenance(
+            "test-engine",
+            "1.0.0",
+            DateTime.UtcNow.ToString("o"),
+            enginePath,
+            "Mirror",
+            "http://test.com/file.zip",
+            "abc123"
+        );
+        
+        var provenanceFile = Path.Combine(enginePath, "install.json");
+        var json = System.Text.Json.JsonSerializer.Serialize(provenance, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+        await File.WriteAllTextAsync(provenanceFile, json);
+
+        // Act
+        var result = await installer.ReadProvenanceAsync("test-engine");
+
+        // Assert
+        Assert.NotNull(result);
+        Assert.Equal("test-engine", result.EngineId);
+        Assert.Equal("1.0.0", result.Version);
+        Assert.Equal("Mirror", result.Source);
+    }
+
+    [Fact]
+    public async Task ReadProvenanceAsync_Should_ReturnNull_WhenFileDoesNotExist()
+    {
+        // Arrange
+        var installer = new EngineInstaller(_logger, _httpClient, _installRoot);
+
+        // Act
+        var result = await installer.ReadProvenanceAsync("nonexistent-engine");
+
+        // Assert
+        Assert.Null(result);
+    }
+
+    [Fact]
     public void IsInstalled_Should_ReturnFalse_WhenDirectoryIsEmpty()
     {
         // Arrange
