@@ -20,7 +20,6 @@ import {
   DialogBody,
   DialogTitle,
   DialogContent,
-  DialogActions,
 } from '@fluentui/react-components';
 import {
   Play24Regular,
@@ -36,6 +35,7 @@ import {
 } from '@fluentui/react-icons';
 import type { EngineManifestEntry, EngineStatus } from '../../types/engines';
 import { useEnginesStore } from '../../state/engines';
+import { DownloadDiagnostics } from '../Diagnostics/DownloadDiagnostics';
 
 const useStyles = makeStyles({
   card: {
@@ -437,134 +437,53 @@ export function EngineCard({ engine }: EngineCardProps) {
         )}
       </CardPreview>
 
-      {/* Diagnostics Dialog */}
-      <Dialog open={showDiagnostics} onOpenChange={(_, data) => setShowDiagnostics(data.open)}>
-        <DialogSurface className={styles.diagnosticsDialog}>
-          <DialogBody>
-            <DialogTitle>Engine Diagnostics - {engine.name}</DialogTitle>
-            <DialogContent>
-              {isLoadingDiagnostics ? (
+      {/* Diagnostics Dialog with self-healing options */}
+      {diagnosticsData && !isLoadingDiagnostics ? (
+        <DownloadDiagnostics
+          open={showDiagnostics}
+          onOpenChange={setShowDiagnostics}
+          diagnosticsInfo={{
+            engineId: engine.id,
+            engineName: engine.name,
+            lastError: diagnosticsData.lastError,
+            errorCode: diagnosticsData.errorCode,
+            failedUrl: diagnosticsData.failedUrl,
+            checksumStatus: diagnosticsData.checksumStatus,
+            expectedSha256: diagnosticsData.expectedSha256,
+            actualSha256: diagnosticsData.actualSha256,
+            installPath: diagnosticsData.installPath,
+          }}
+          onRetry={async () => {
+            await handleRepairWithRetry();
+          }}
+          onPickExistingPath={async (path: string) => {
+            // TODO: Implement API endpoint to set existing path
+            console.log('Set existing path for', engine.id, ':', path);
+            alert(`Path set to: ${path}\n\nNote: This feature requires backend API support.`);
+          }}
+          onUseCustomUrl={async (url: string) => {
+            // TODO: Implement API endpoint to use custom URL
+            console.log('Use custom URL for', engine.id, ':', url);
+            alert(`Custom URL: ${url}\n\nNote: This feature requires backend API support.`);
+          }}
+          onInstallFromLocalFile={async (filePath: string) => {
+            // TODO: Implement API endpoint to install from local file
+            console.log('Install from local file for', engine.id, ':', filePath);
+            alert(`Local file: ${filePath}\n\nNote: This feature requires backend API support.`);
+          }}
+        />
+      ) : (
+        <Dialog open={showDiagnostics && isLoadingDiagnostics} onOpenChange={(_, data) => setShowDiagnostics(data.open)}>
+          <DialogSurface>
+            <DialogBody>
+              <DialogTitle>Loading Diagnostics...</DialogTitle>
+              <DialogContent>
                 <Spinner label="Loading diagnostics..." />
-              ) : diagnosticsData?.error ? (
-                <Text style={{ color: tokens.colorPaletteRedForeground1 }}>
-                  {diagnosticsData.error}
-                </Text>
-              ) : diagnosticsData ? (
-                <div className={styles.diagnosticsContent}>
-                  <div className={styles.diagnosticsItem}>
-                    <Text className={styles.diagnosticsLabel}>Install Path:</Text>
-                    <Text>{diagnosticsData.installPath}</Text>
-                  </div>
-                  
-                  <div className={styles.diagnosticsItem}>
-                    <Text className={styles.diagnosticsLabel}>Is Installed:</Text>
-                    <Badge appearance="filled" color={diagnosticsData.isInstalled ? 'success' : 'warning'}>
-                      {diagnosticsData.isInstalled ? 'Yes' : 'No'}
-                    </Badge>
-                  </div>
-                  
-                  <div className={styles.diagnosticsItem}>
-                    <Text className={styles.diagnosticsLabel}>Path Exists:</Text>
-                    <Badge appearance="filled" color={diagnosticsData.pathExists ? 'success' : 'danger'}>
-                      {diagnosticsData.pathExists ? 'Yes' : 'No'}
-                    </Badge>
-                  </div>
-                  
-                  <div className={styles.diagnosticsItem}>
-                    <Text className={styles.diagnosticsLabel}>Path Writable:</Text>
-                    <Badge appearance="filled" color={diagnosticsData.pathWritable ? 'success' : 'danger'}>
-                      {diagnosticsData.pathWritable ? 'Yes' : 'No'}
-                    </Badge>
-                  </div>
-                  
-                  <div className={styles.diagnosticsItem}>
-                    <Text className={styles.diagnosticsLabel}>Available Disk Space:</Text>
-                    <Text>{formatBytes(diagnosticsData.availableDiskSpaceBytes)}</Text>
-                  </div>
-                  
-                  {diagnosticsData.checksumStatus && (
-                    <div className={styles.diagnosticsItem}>
-                      <Text className={styles.diagnosticsLabel}>Checksum Status:</Text>
-                      <Badge appearance="filled" color={diagnosticsData.checksumStatus === 'Valid' ? 'success' : 'danger'}>
-                        {diagnosticsData.checksumStatus}
-                      </Badge>
-                    </div>
-                  )}
-                  
-                  {diagnosticsData.expectedSha256 && (
-                    <div className={styles.diagnosticsItem}>
-                      <Text className={styles.diagnosticsLabel}>Expected SHA256:</Text>
-                      <Text style={{ fontFamily: 'monospace', fontSize: '12px', wordBreak: 'break-all' }}>
-                        {diagnosticsData.expectedSha256}
-                      </Text>
-                    </div>
-                  )}
-                  
-                  {diagnosticsData.actualSha256 && (
-                    <div className={styles.diagnosticsItem}>
-                      <Text className={styles.diagnosticsLabel}>Actual SHA256:</Text>
-                      <Text style={{ 
-                        fontFamily: 'monospace', 
-                        fontSize: '12px', 
-                        wordBreak: 'break-all',
-                        color: tokens.colorPaletteRedForeground1 
-                      }}>
-                        {diagnosticsData.actualSha256}
-                      </Text>
-                    </div>
-                  )}
-                  
-                  {diagnosticsData.failedUrl && (
-                    <div className={styles.diagnosticsItem}>
-                      <Text className={styles.diagnosticsLabel}>Download URL:</Text>
-                      <Text style={{ fontFamily: 'monospace', fontSize: '12px', wordBreak: 'break-all' }}>
-                        {diagnosticsData.failedUrl}
-                      </Text>
-                    </div>
-                  )}
-                  
-                  {diagnosticsData.lastError && (
-                    <div className={styles.diagnosticsItem}>
-                      <Text className={styles.diagnosticsLabel}>Last Error:</Text>
-                      <Text style={{ color: tokens.colorPaletteRedForeground1 }}>
-                        {diagnosticsData.lastError}
-                      </Text>
-                    </div>
-                  )}
-                  
-                  {diagnosticsData.issues && diagnosticsData.issues.length > 0 && (
-                    <div className={styles.diagnosticsIssues}>
-                      <Text weight="semibold" block style={{ marginBottom: tokens.spacingVerticalXS }}>
-                        Issues Found:
-                      </Text>
-                      {diagnosticsData.issues.map((issue: string, idx: number) => (
-                        <Text key={idx} block style={{ marginTop: tokens.spacingVerticalXXS }}>
-                          • {issue}
-                        </Text>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ) : null}
-            </DialogContent>
-            <DialogActions>
-              {diagnosticsData && !diagnosticsData.error && diagnosticsData.issues && diagnosticsData.issues.length > 0 && (
-                <Button 
-                  appearance="primary" 
-                  icon={<Wrench24Regular />}
-                  onClick={handleRepairWithRetry}
-                  disabled={isProcessing}
-                >
-                  Retry with Repair
-                </Button>
-              )}
-              <Button appearance="secondary" onClick={() => setShowDiagnostics(false)}>
-                Close
-              </Button>
-            </DialogActions>
-          </DialogBody>
-        </DialogSurface>
-      </Dialog>
+              </DialogContent>
+            </DialogBody>
+          </DialogSurface>
+        </Dialog>
+      )}
     </Card>
   );
 }
