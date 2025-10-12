@@ -29,6 +29,9 @@ public class EngineManifestEntry
     [JsonPropertyName("urls")]
     public Dictionary<string, string> Urls { get; set; } = new(); // platform -> url
 
+    [JsonPropertyName("mirrors")]
+    public Dictionary<string, List<string>>? Mirrors { get; set; } // platform -> list of mirror URLs
+
     [JsonPropertyName("extractDir")]
     public string? ExtractDir { get; set; }
 

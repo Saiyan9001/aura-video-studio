@@ -4,7 +4,9 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -210,10 +212,9 @@ public class EnginesController : ControllerBase
             }
 
             // Install the engine
-            await _installer.InstallAsync(engine, null, ct);
+            string installPath = await _installer.InstallAsync(engine, null, ct, request.CustomUrl, request.LocalFilePath);
 
             // Register with the registry
-            string installPath = _installer.GetInstallPath(request.EngineId);
             string executablePath = System.IO.Path.Combine(installPath, engine.Entrypoint);
             
             var engineConfig = new EngineConfig(
@@ -349,12 +350,13 @@ public class EnginesController : ControllerBase
                 return NotFound(new { error = $"Engine {request.EngineId} not found in manifest" });
             }
 
-            await _installer.RepairAsync(engine, null, ct);
+            string installPath = await _installer.RepairAsync(engine, null, ct);
 
             return Ok(new
             {
                 success = true,
                 engineId = request.EngineId,
+                installPath,
                 message = $"Engine {engine.Name} repaired successfully"
             });
         }
@@ -742,6 +744,78 @@ public class EnginesController : ControllerBase
     }
 
     /// <summary>
+    /// Get installation provenance for an engine
+    /// </summary>
+    [HttpGet("provenance")]
+    public async Task<IActionResult> GetProvenance([FromQuery] string engineId)
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(engineId))
+            {
+                return BadRequest(new { error = "engineId is required" });
+            }
+
+            var provenance = await _installer.ReadProvenanceAsync(engineId);
+            
+            if (provenance == null)
+            {
+                return NotFound(new { error = $"No provenance information found for engine {engineId}" });
+            }
+
+            return Ok(provenance);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get provenance for engine {EngineId}", engineId);
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Open the installation folder for an engine
+    /// </summary>
+    [HttpPost("open-folder")]
+    public IActionResult OpenFolder([FromBody] EngineActionRequest request)
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(request.EngineId))
+            {
+                return BadRequest(new { error = "engineId is required" });
+            }
+
+            string installPath = _installer.GetInstallPath(request.EngineId);
+            
+            if (!Directory.Exists(installPath))
+            {
+                return NotFound(new { error = $"Installation path does not exist: {installPath}" });
+            }
+
+            // Open folder in file explorer
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                System.Diagnostics.Process.Start("explorer.exe", installPath);
+            }
+            else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+            {
+                System.Diagnostics.Process.Start("xdg-open", installPath);
+            }
+            else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+            {
+                System.Diagnostics.Process.Start("open", installPath);
+            }
+
+            return Ok(new { success = true, path = installPath });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to open folder for engine {EngineId}", request.EngineId);
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+
+    /// <summary>
     /// Detect FFmpeg specifically
     /// </summary>
     [HttpGet("detect/ffmpeg")]
@@ -788,7 +862,13 @@ public class EnginesController : ControllerBase
     }
 }
 
-public record InstallRequest(string EngineId, string? Version = null, int? Port = null);
+public record InstallRequest(
+    string EngineId, 
+    string? Version = null, 
+    int? Port = null,
+    string? CustomUrl = null,
+    string? LocalFilePath = null
+);
 public record EngineActionRequest(string EngineId);
 public record StartRequest(string EngineId, int? Port = null, string? Args = null);
 public record EnginePreferences

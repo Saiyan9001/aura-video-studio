@@ -13,7 +13,9 @@ public record HttpDownloadProgress(
     long TotalBytes,
     float PercentComplete,
     double SpeedBytesPerSecond,
-    string? Message = null
+    string? Message = null,
+    string? ErrorCode = null, // E-DL-404, E-DL-TIMEOUT, E-DL-CHECKSUM
+    string? ActiveMirror = null
 );
 
 /// <summary>
@@ -42,31 +44,175 @@ public class HttpDownloader
         IProgress<HttpDownloadProgress>? progress = null,
         CancellationToken ct = default)
     {
-        for (int attempt = 0; attempt < MaxRetries; attempt++)
-        {
-            try
-            {
-                if (attempt > 0)
-                {
-                    _logger.LogInformation("Retry attempt {Attempt} of {MaxRetries}", attempt, MaxRetries);
-                    await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)), ct); // Exponential backoff
-                }
+        var urls = new List<string> { url };
+        return await DownloadFileWithMirrorsAsync(urls, outputPath, expectedSha256, progress, ct);
+    }
 
-                var result = await DownloadFileInternalAsync(url, outputPath, expectedSha256, progress, ct);
-                return result;
-            }
-            catch (HttpRequestException ex) when (attempt < MaxRetries - 1)
+    /// <summary>
+    /// Download a file with mirror fallback support
+    /// </summary>
+    public async Task<bool> DownloadFileWithMirrorsAsync(
+        List<string> urls,
+        string outputPath,
+        string? expectedSha256 = null,
+        IProgress<HttpDownloadProgress>? progress = null,
+        CancellationToken ct = default)
+    {
+        if (urls == null || urls.Count == 0)
+        {
+            throw new ArgumentException("At least one URL must be provided", nameof(urls));
+        }
+
+        Exception? lastException = null;
+        
+        // Try each mirror
+        for (int mirrorIndex = 0; mirrorIndex < urls.Count; mirrorIndex++)
+        {
+            string currentUrl = urls[mirrorIndex];
+            _logger.LogInformation("Trying URL {Index} of {Total}: {Url}", mirrorIndex + 1, urls.Count, currentUrl);
+            
+            // Try with retries for each mirror
+            for (int attempt = 0; attempt < MaxRetries; attempt++)
             {
-                _logger.LogWarning(ex, "Download attempt {Attempt} failed, will retry", attempt + 1);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Download failed: {Url}", url);
-                throw;
+                try
+                {
+                    if (attempt > 0)
+                    {
+                        _logger.LogInformation("Retry attempt {Attempt} of {MaxRetries} for mirror {MirrorIndex}", 
+                            attempt, MaxRetries, mirrorIndex + 1);
+                        await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)), ct); // Exponential backoff
+                    }
+
+                    progress?.Report(new HttpDownloadProgress(0, 0, 0, 0, 
+                        $"Trying mirror {mirrorIndex + 1}/{urls.Count}...", null, currentUrl));
+
+                    var result = await DownloadFileInternalAsync(currentUrl, outputPath, expectedSha256, progress, ct, currentUrl);
+                    
+                    if (result)
+                    {
+                        _logger.LogInformation("Successfully downloaded from mirror {Index}", mirrorIndex + 1);
+                        return true;
+                    }
+                    
+                    // Checksum failed - try next mirror
+                    _logger.LogWarning("Download succeeded but checksum verification failed for mirror {Index}", mirrorIndex + 1);
+                    break; // Don't retry this mirror, move to next one
+                }
+                catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+                {
+                    _logger.LogWarning("Mirror {Index} returned 404, trying next mirror", mirrorIndex + 1);
+                    progress?.Report(new HttpDownloadProgress(0, 0, 0, 0, 
+                        $"Mirror {mirrorIndex + 1} returned 404", "E-DL-404", currentUrl));
+                    lastException = ex;
+                    break; // Don't retry 404s, move to next mirror
+                }
+                catch (TaskCanceledException ex)
+                {
+                    _logger.LogWarning("Download from mirror {Index} timed out", mirrorIndex + 1);
+                    progress?.Report(new HttpDownloadProgress(0, 0, 0, 0, 
+                        $"Mirror {mirrorIndex + 1} timed out", "E-DL-TIMEOUT", currentUrl));
+                    lastException = ex;
+                    
+                    if (attempt < MaxRetries - 1)
+                    {
+                        continue; // Retry timeouts
+                    }
+                    break; // Max retries reached, try next mirror
+                }
+                catch (HttpRequestException ex) when (attempt < MaxRetries - 1)
+                {
+                    _logger.LogWarning(ex, "Download attempt {Attempt} failed for mirror {Index}, will retry", 
+                        attempt + 1, mirrorIndex + 1);
+                    lastException = ex;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Download failed for mirror {Index}: {Url}", mirrorIndex + 1, currentUrl);
+                    lastException = ex;
+                    break; // Don't retry unexpected errors, try next mirror
+                }
             }
         }
 
+        // All mirrors exhausted
+        _logger.LogError("All {Count} mirror(s) failed", urls.Count);
+        if (lastException != null)
+        {
+            throw lastException;
+        }
+        
         return false;
+    }
+
+    /// <summary>
+    /// Import a file from local path with checksum verification
+    /// </summary>
+    public async Task<bool> ImportLocalFileAsync(
+        string localPath,
+        string outputPath,
+        string? expectedSha256 = null,
+        IProgress<HttpDownloadProgress>? progress = null,
+        CancellationToken ct = default)
+    {
+        if (!File.Exists(localPath))
+        {
+            throw new FileNotFoundException($"Local file not found: {localPath}", localPath);
+        }
+
+        _logger.LogInformation("Importing local file: {LocalPath}", localPath);
+        
+        progress?.Report(new HttpDownloadProgress(0, 0, 0, 0, "Copying local file...", null, "LocalFile"));
+
+        // Copy file
+        long fileSize = new FileInfo(localPath).Length;
+        await using (var sourceStream = File.OpenRead(localPath))
+        await using (var destStream = File.Create(outputPath))
+        {
+            var buffer = new byte[81920]; // 80KB buffer
+            long totalRead = 0;
+            int bytesRead;
+            
+            while ((bytesRead = await sourceStream.ReadAsync(buffer, 0, buffer.Length, ct)) > 0)
+            {
+                await destStream.WriteAsync(buffer, 0, bytesRead, ct);
+                totalRead += bytesRead;
+                
+                float percent = fileSize > 0 ? (float)(totalRead * 100.0 / fileSize) : 0;
+                progress?.Report(new HttpDownloadProgress(totalRead, fileSize, percent, 0, 
+                    $"Copying: {percent:F1}%", null, "LocalFile"));
+            }
+        }
+
+        _logger.LogInformation("Local file copied successfully");
+
+        // Verify checksum if provided
+        if (!string.IsNullOrEmpty(expectedSha256))
+        {
+            _logger.LogInformation("Verifying checksum...");
+            progress?.Report(new HttpDownloadProgress(fileSize, fileSize, 100, 0, "Verifying checksum...", null, "LocalFile"));
+            
+            var actualSha256 = await ComputeSha256Async(outputPath, ct);
+            
+            if (!string.Equals(actualSha256, expectedSha256, StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogWarning("Checksum mismatch! Expected: {Expected}, Actual: {Actual}", 
+                    expectedSha256, actualSha256);
+                progress?.Report(new HttpDownloadProgress(fileSize, fileSize, 100, 0, 
+                    "Checksum mismatch - accept anyway?", "E-DL-CHECKSUM", "LocalFile"));
+                
+                // Don't delete the file, let caller decide
+                return false;
+            }
+            
+            _logger.LogInformation("Checksum verified successfully");
+        }
+        else
+        {
+            _logger.LogWarning("No checksum provided for local file, skipping verification");
+        }
+
+        progress?.Report(new HttpDownloadProgress(fileSize, fileSize, 100, 0, "Import complete", null, "LocalFile"));
+        return true;
     }
 
     private async Task<bool> DownloadFileInternalAsync(
@@ -74,7 +220,8 @@ public class HttpDownloader
         string outputPath,
         string? expectedSha256,
         IProgress<HttpDownloadProgress>? progress,
-        CancellationToken ct)
+        CancellationToken ct,
+        string? activeMirror = null)
     {
         var partialPath = outputPath + ".partial";
         var startTime = DateTime.UtcNow;
@@ -137,7 +284,10 @@ public class HttpDownloader
                             totalBytesRead,
                             totalBytes,
                             percentComplete,
-                            speed
+                            speed,
+                            null,
+                            null,
+                            activeMirror ?? url
                         ));
 
                         lastProgressReport = DateTime.UtcNow;
@@ -149,7 +299,7 @@ public class HttpDownloader
             } // File stream is now closed
 
             // Final progress report
-            progress?.Report(new HttpDownloadProgress(totalBytesRead, totalBytes, 100, 0, "Download complete"));
+            progress?.Report(new HttpDownloadProgress(totalBytesRead, totalBytes, 100, 0, "Download complete", null, activeMirror ?? url));
 
             // Move partial file to final location
             if (File.Exists(outputPath))
