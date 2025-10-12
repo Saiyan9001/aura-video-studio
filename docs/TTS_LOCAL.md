@@ -57,6 +57,50 @@ chmod +x ~/.local/share/aura/tools/piper/piper
 
 ### Voice Models
 
+#### Where Voices Are Stored
+
+```
+%LOCALAPPDATA%\Aura\Tools\piper\voices\
+```
+
+Each voice requires two files:
+- `.onnx` - The voice model file
+- `.onnx.json` - Voice configuration
+
+#### Models & Voices Manager
+
+Aura includes a built-in **Models & Voices Manager** for Piper voices:
+
+**Features:**
+- View all installed voices with exact file locations
+- Install voices from built-in catalogs
+- Attach external voice folders (for existing voice collections)
+- Play voice samples
+- Set default voice
+- Verify voice file integrity
+
+**Accessing the Manager:**
+1. Open Download Center
+2. Navigate to Engines tab
+3. Click on Piper TTS card
+4. Click "Models & Voices" button
+
+#### Using Your Own Voice Collections
+
+If you have Piper voices stored elsewhere:
+
+1. Open Models & Voices Manager
+2. Click "Add External Folder"
+3. Select your voice directory
+4. Voices will be indexed immediately
+5. No files are moved or copied
+
+**Benefits:**
+- No duplicate files
+- Use voices from multiple locations
+- Keep your organized structure
+- Share voices across applications
+
 #### Popular English Voices
 
 | Voice | Quality | Size | Speed | Style |
@@ -69,10 +113,11 @@ chmod +x ~/.local/share/aura/tools/piper/piper
 #### Downloading Voices
 
 **From Aura UI:**
-1. Settings → Engines → Piper → Manage Voices
-2. Browse available voices
-3. Click **Download** on desired voice
-4. Set as default (optional)
+1. Download Center → Engines → Piper
+2. Click "Models & Voices"
+3. Browse available voices
+4. Click **Install** on desired voice
+5. Voice will be downloaded and verified
 
 **Manual Download:**
 ```powershell
@@ -85,10 +130,25 @@ Invoke-WebRequest -Uri "$baseUrl/en_US-lessac-medium.onnx.json" -OutFile "en_US-
 
 Place files in: `%LOCALAPPDATA%\Aura\Tools\piper\voices\`
 
+Or use Models & Voices Manager to add the directory containing your downloads.
+
 #### All Supported Languages
 English, Spanish, French, German, Dutch, Italian, Polish, Russian, Ukrainian, Chinese, Japanese, Korean, Vietnamese, and more.
 
 Full list: https://github.com/rhasspy/piper#voices
+
+### Path Conventions
+
+**Default Paths:**
+- Piper Voices: `%LOCALAPPDATA%\Aura\Tools\piper\voices\`
+- Mimic3 Voices: `%LOCALAPPDATA%\Aura\Tools\mimic3\voices\`
+
+**External Paths:**
+- Can be anywhere on your system
+- Indexed through Models & Voices Manager
+- Paths are stored in Aura's configuration
+- Files remain in original location
+- Changes to external folders are reflected automatically
 
 ### Configuration
 

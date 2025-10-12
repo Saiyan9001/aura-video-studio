@@ -263,28 +263,91 @@ Usually caused by:
 ## Model Management
 
 ### Where Models Are Stored
+
+Aura stores models in organized directories:
+
 ```
-%LOCALAPPDATA%\Aura\Tools\stable-diffusion-webui\models\Stable-diffusion\
+%LOCALAPPDATA%\Aura\Tools\stable-diffusion-webui\models\
+├── Stable-diffusion\  (Base and refiner models)
+├── VAE\               (VAE models)
+└── Lora\              (LoRA models)
 ```
 
+### Models & Voices Manager
+
+Aura includes a built-in **Models & Voices Manager** to help you manage your AI models:
+
+**Features:**
+- View all installed models with exact file locations
+- Install models from built-in catalogs
+- Attach external model folders (read-only or read/write)
+- Verify model checksums
+- Open model folders directly from UI
+- See model provenance and metadata
+
+**Accessing the Manager:**
+1. Open Download Center
+2. Navigate to Engines tab
+3. Click on Stable Diffusion or ComfyUI card
+4. Click "Models & Voices" button
+
+### Using Your Own Model Collections
+
+If you already have a collection of Stable Diffusion models elsewhere on your system, you don't need to copy them:
+
+1. Open Models & Voices Manager
+2. Click "Add External Folder"
+3. Select your existing model directory
+4. Choose read-only (safe) or read/write
+5. Models will be indexed and available immediately
+
+**Benefits:**
+- No duplicate files
+- Use models from multiple locations
+- Keep your organized structure
+- Easy to manage
+
 ### Downloading Additional Models
+
+#### From Aura UI
+1. Download Center → Engines → Stable Diffusion
+2. Click "Models & Voices"
+3. Browse available models
+4. Click "Install" on desired model
+5. Model will be downloaded and verified
 
 #### HuggingFace
 1. Go to https://huggingface.co/models
 2. Search for "stable diffusion"
 3. Download `.safetensors` or `.ckpt` file
-4. Place in `models\Stable-diffusion\`
+4. Either:
+   - Place in `%LOCALAPPDATA%\Aura\Tools\stable-diffusion-webui\models\Stable-diffusion\`
+   - Or use "Add External Folder" to index your download location
 
 #### Civitai (Community Models)
 1. Go to https://civitai.com/
 2. Browse models (anime, realistic, etc.)
 3. Download model file
-4. Place in `models\Stable-diffusion\`
+4. Use Models & Voices Manager to add or install
 5. **Note**: Check license restrictions
 
 ### Model File Formats
 - `.safetensors` - **Recommended** (safe, efficient)
 - `.ckpt` - Legacy format (still works)
+- `.pt` - PyTorch format (some LoRAs)
+
+### Path Conventions
+
+**Default Paths:**
+- Base Models: `%LOCALAPPDATA%\Aura\Tools\stable-diffusion-webui\models\Stable-diffusion\`
+- VAE: `%LOCALAPPDATA%\Aura\Tools\stable-diffusion-webui\models\VAE\`
+- LoRA: `%LOCALAPPDATA%\Aura\Tools\stable-diffusion-webui\models\Lora\`
+
+**External Paths:**
+- Can be anywhere on your system
+- Indexed through Models & Voices Manager
+- Paths are stored in Aura's configuration
+- Files remain in original location
 
 ## Advanced Features
 
