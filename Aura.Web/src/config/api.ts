@@ -17,8 +17,8 @@ function getApiBaseUrl(): string {
   // In development, try to auto-detect from window location
   // This handles cases where the API is served on the same host but different port
   if (import.meta.env.DEV) {
-    // Default to common development port
-    return 'http://127.0.0.1:5272';
+    // Default to backend API port (should match Aura.Api appsettings.json)
+    return 'http://127.0.0.1:5005';
   }
 
   // Production fallback - assume API is on same origin

@@ -173,15 +173,21 @@ export function CreatePage() {
   };
 
   const handleGenerate = async () => {
+    console.log('[GENERATE VIDEO] Button clicked (CreatePage)');
+    console.log('[GENERATE VIDEO] Current form data:', { brief, planSpec });
+    
     setGenerating(true);
     try {
-      console.log('Starting video generation...');
+      console.log('[GENERATE VIDEO] Starting video generation...');
       
       // Validate and warn about legacy enum values
       validateAndWarnEnums(brief, planSpec);
       
       // Normalize enums to canonical values before sending to API
       const { brief: normalizedBrief, planSpec: normalizedPlanSpec } = normalizeEnumsForApi(brief, planSpec);
+      
+      console.log('[GENERATE VIDEO] Normalized brief:', normalizedBrief);
+      console.log('[GENERATE VIDEO] Normalized planSpec:', normalizedPlanSpec);
       
       // Create voice spec with defaults
       const voiceSpec = {
@@ -203,49 +209,58 @@ export function CreatePage() {
         enableSceneCut: true,
       };
       
-      console.log('Creating job with brief:', normalizedBrief);
-      console.log('Plan spec:', normalizedPlanSpec);
+      const requestData = {
+        brief: {
+          topic: normalizedBrief.topic,
+          audience: normalizedBrief.audience || 'General',
+          goal: normalizedBrief.goal || 'Inform',
+          tone: normalizedBrief.tone || 'Informative',
+          language: normalizedBrief.language || 'en-US',
+          aspect: normalizedBrief.aspect || 'Widescreen16x9',
+        },
+        planSpec: {
+          targetDuration: `00:${String(Math.floor(normalizedPlanSpec.targetDurationMinutes || 3)).padStart(2, '0')}:00`,
+          pacing: normalizedPlanSpec.pacing || 'Conversational',
+          density: normalizedPlanSpec.density || 'Balanced',
+          style: normalizedPlanSpec.style || 'Standard',
+        },
+        voiceSpec,
+        renderSpec,
+      };
+      
+      console.log('[GENERATE VIDEO] Request data:', requestData);
+      console.log('[GENERATE VIDEO] Calling API endpoint /api/jobs...');
       
       // Create a full video generation job via JobsController
-      const response = await fetch('/api/jobs', {
+      const response = await fetch(apiUrl('/api/jobs'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          brief: {
-            topic: normalizedBrief.topic,
-            audience: normalizedBrief.audience || 'General',
-            goal: normalizedBrief.goal || 'Inform',
-            tone: normalizedBrief.tone || 'Informative',
-            language: normalizedBrief.language || 'en-US',
-            aspect: normalizedBrief.aspect || 'Widescreen16x9',
-          },
-          planSpec: {
-            targetDuration: `00:${String(Math.floor(normalizedPlanSpec.targetDurationMinutes || 3)).padStart(2, '0')}:00`,
-            pacing: normalizedPlanSpec.pacing || 'Conversational',
-            density: normalizedPlanSpec.density || 'Balanced',
-            style: normalizedPlanSpec.style || 'Standard',
-          },
-          voiceSpec,
-          renderSpec,
-        }),
+        body: JSON.stringify(requestData),
       });
+
+      console.log('[GENERATE VIDEO] API response status:', response.status);
 
       if (response.ok) {
         const data = await response.json();
-        console.log('Job created successfully:', data);
+        console.log('[GENERATE VIDEO] Job created successfully:', data);
         alert(`Video generation started! Job ID: ${data.jobId}\n\nYou can track progress in the jobs panel.`);
         
         // TODO: Navigate to jobs page or open generation panel
         // For now, just show success message
       } else {
         const errorText = await response.text();
-        console.error('Failed to create job:', response.status, errorText);
+        console.error('[GENERATE VIDEO] Failed to create job:', response.status, errorText);
         alert(`Failed to start video generation: ${response.status} ${response.statusText}\n\nCheck console for details.`);
       }
     } catch (error) {
-      console.error('Error creating video generation job:', error);
+      console.error('[GENERATE VIDEO] Error creating video generation job:', error);
+      console.error('[GENERATE VIDEO] Error details:', {
+        message: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+      });
       alert(`Error starting video generation: ${error instanceof Error ? error.message : 'Unknown error'}\n\nCheck console for details.`);
     } finally {
+      console.log('[GENERATE VIDEO] Resetting generating state');
       setGenerating(false);
     }
   };

@@ -329,13 +329,21 @@ export function CreateWizard() {
   };
 
   const handleGenerate = async () => {
+    console.log('[GENERATE VIDEO] Button clicked');
+    console.log('[GENERATE VIDEO] Current settings:', { brief: settings.brief, planSpec: settings.planSpec });
+    
     setGenerating(true);
     try {
+      console.log('[GENERATE VIDEO] Starting video generation...');
+      
       validateAndWarnEnums(settings.brief, settings.planSpec);
       const { brief: normalizedBrief, planSpec: normalizedPlanSpec } = normalizeEnumsForApi(
         settings.brief,
         settings.planSpec
       );
+
+      console.log('[GENERATE VIDEO] Normalized brief:', normalizedBrief);
+      console.log('[GENERATE VIDEO] Normalized planSpec:', normalizedPlanSpec);
 
       // Create job with full specs
       const brief = {
@@ -372,28 +380,40 @@ export function CreateWizard() {
         enableSceneCut: true,
       };
 
-      const response = await fetch('/api/jobs', {
+      const requestData = {
+        brief,
+        planSpec,
+        voiceSpec,
+        renderSpec,
+      };
+
+      console.log('[GENERATE VIDEO] Request data:', requestData);
+      console.log('[GENERATE VIDEO] Calling API endpoint /api/jobs...');
+
+      const response = await fetch(apiUrl('/api/jobs'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          brief,
-          planSpec,
-          voiceSpec,
-          renderSpec,
-        }),
+        body: JSON.stringify(requestData),
       });
+
+      console.log('[GENERATE VIDEO] API response status:', response.status);
 
       if (response.ok) {
         const data = await response.json();
+        console.log('[GENERATE VIDEO] API response data:', data);
         
         // Set job in global state for status bar
         useJobState.getState().setJob(data.jobId);
         useJobState.getState().updateProgress(0, 'Starting video generation...');
         
+        console.log('[GENERATE VIDEO] Job created successfully:', data.jobId);
         setActiveJobId(data.jobId);
         setShowGenerationPanel(true);
       } else {
+        console.error('[GENERATE VIDEO] API request failed:', response.status, response.statusText);
         const errorInfo = await parseApiError(response);
+        console.error('[GENERATE VIDEO] Error details:', errorInfo);
+        
         showFailureToast({
           title: errorInfo.title,
           message: errorInfo.message,
@@ -405,8 +425,15 @@ export function CreateWizard() {
         });
       }
     } catch (error) {
-      console.error('Error starting generation:', error);
+      console.error('[GENERATE VIDEO] Exception caught:', error);
+      console.error('[GENERATE VIDEO] Error details:', {
+        message: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+      
       const errorInfo = await parseApiError(error);
+      console.error('[GENERATE VIDEO] Parsed error info:', errorInfo);
+      
       showFailureToast({
         title: errorInfo.title,
         message: errorInfo.message,
@@ -417,15 +444,22 @@ export function CreateWizard() {
         onOpenLogs: openLogsFolder,
       });
     } finally {
+      console.log('[GENERATE VIDEO] Resetting generating state');
       setGenerating(false);
     }
   };
 
   const handleQuickDemo = async () => {
+    console.log('[QUICK DEMO] Button clicked');
+    console.log('[QUICK DEMO] Current settings:', { topic: settings.brief.topic });
+    
     setGenerating(true);
     try {
+      console.log('[QUICK DEMO] Starting quick demo generation...');
+      
       // Validate before starting generation
-      const validationResponse = await fetch('http://localhost:5005/api/validation/brief', {
+      console.log('[QUICK DEMO] Calling validation endpoint...');
+      const validationResponse = await fetch(apiUrl('/api/validation/brief'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -434,9 +468,14 @@ export function CreateWizard() {
         }),
       });
 
+      console.log('[QUICK DEMO] Validation response status:', validationResponse.status);
+
       if (validationResponse.ok) {
         const validationData = await validationResponse.json();
+        console.log('[QUICK DEMO] Validation data:', validationData);
+        
         if (!validationData.isValid) {
+          console.warn('[QUICK DEMO] Validation failed:', validationData.issues);
           showFailureToast({
             title: 'Validation Failed',
             message: validationData.issues.join('\n'),
@@ -447,16 +486,21 @@ export function CreateWizard() {
       }
 
       // Validation passed, proceed with generation
-      const response = await fetch('/api/quick/demo', {
+      console.log('[QUICK DEMO] Calling quick demo endpoint...');
+      const requestData = { topic: settings.brief.topic || null };
+      console.log('[QUICK DEMO] Request data:', requestData);
+      
+      const response = await fetch(apiUrl('/api/quick/demo'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          topic: settings.brief.topic || null,
-        }),
+        body: JSON.stringify(requestData),
       });
+
+      console.log('[QUICK DEMO] API response status:', response.status);
 
       if (response.ok) {
         const data = await response.json();
+        console.log('[QUICK DEMO] API response data:', data);
         
         // Set job in global state for status bar
         useJobState.getState().setJob(data.jobId);
@@ -468,10 +512,14 @@ export function CreateWizard() {
           message: `Job ID: ${data.jobId}`,
         });
         
+        console.log('[QUICK DEMO] Job created successfully:', data.jobId);
         setActiveJobId(data.jobId);
         setShowGenerationPanel(true);
       } else {
+        console.error('[QUICK DEMO] API request failed:', response.status, response.statusText);
         const errorInfo = await parseApiError(response);
+        console.error('[QUICK DEMO] Error details:', errorInfo);
+        
         showFailureToast({
           title: 'Failed to Start Quick Demo',
           message: errorInfo.message,
@@ -481,8 +529,15 @@ export function CreateWizard() {
         });
       }
     } catch (error) {
-      console.error('Error starting quick demo:', error);
+      console.error('[QUICK DEMO] Exception caught:', error);
+      console.error('[QUICK DEMO] Error details:', {
+        message: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+      
       const errorInfo = await parseApiError(error);
+      console.error('[QUICK DEMO] Parsed error info:', errorInfo);
+      
       showFailureToast({
         title: 'Failed to Start Quick Demo',
         message: errorInfo.message,
@@ -491,6 +546,7 @@ export function CreateWizard() {
         errorCode: errorInfo.errorCode,
       });
     } finally {
+      console.log('[QUICK DEMO] Resetting generating state');
       setGenerating(false);
     }
   };
