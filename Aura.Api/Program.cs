@@ -279,6 +279,9 @@ builder.Services.AddSingleton<Aura.Core.ML.Models.FrameImportanceModel>();
 // Register pacing services in dependency order
 builder.Services.AddSingleton<Aura.Core.Services.PacingServices.SceneImportanceAnalyzer>();
 builder.Services.AddSingleton<Aura.Core.Services.PacingServices.AttentionCurvePredictor>();
+builder.Services.AddSingleton<Aura.Core.Services.PacingServices.TransitionRecommender>();
+builder.Services.AddSingleton<Aura.Core.Services.PacingServices.EmotionalBeatAnalyzer>();
+builder.Services.AddSingleton<Aura.Core.Services.PacingServices.SceneRelationshipMapper>();
 builder.Services.AddSingleton<Aura.Core.Services.PacingServices.IntelligentPacingOptimizer>();
 builder.Services.AddSingleton<Aura.Core.Services.PacingServices.PacingApplicationService>();
 

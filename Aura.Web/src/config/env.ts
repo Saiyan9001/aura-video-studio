@@ -4,7 +4,9 @@
  */
 
 export const env = {
-  apiBaseUrl: import.meta.env.VITE_API_BASE_URL || 'http://localhost:5005',
+  // In production, use relative URL so it works from any origin (127.0.0.1, localhost, etc.)
+  // In development, use full URL to proxy to the dev API server
+  apiBaseUrl: import.meta.env.VITE_API_BASE_URL || (import.meta.env.PROD ? '' : 'http://localhost:5272'),
   appVersion: import.meta.env.VITE_APP_VERSION || '1.0.0',
   appName: import.meta.env.VITE_APP_NAME || 'Aura Video Studio',
   environment: import.meta.env.VITE_ENV || 'development',

@@ -14,15 +14,16 @@ function getApiBaseUrl(): string {
     return import.meta.env.VITE_API_URL;
   }
 
-  // In development, try to auto-detect from window location
-  // This handles cases where the API is served on the same host but different port
+  // In development, use proxy configuration
+  // The Vite dev server will proxy /api requests to the backend
   if (import.meta.env.DEV) {
-    // Default to common development port (matches backend default)
-    return 'http://127.0.0.1:5005';
+    // Return empty string to use relative URLs, which will be proxied by Vite
+    return '';
   }
 
-  // Production fallback - assume API is on same origin
-  return window.location.origin;
+  // Production - use relative URLs since frontend is served from same origin as API
+  // This ensures it works with both 127.0.0.1:5005 and localhost:5005
+  return '';
 }
 
 export const API_BASE_URL = getApiBaseUrl();
