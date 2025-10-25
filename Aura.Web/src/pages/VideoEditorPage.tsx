@@ -5,7 +5,7 @@ import { TimelinePanel } from '../components/EditorLayout/TimelinePanel';
 import { PropertiesPanel } from '../components/EditorLayout/PropertiesPanel';
 import { MediaLibraryPanel } from '../components/EditorLayout/MediaLibraryPanel';
 
-interface TimelineClip {
+export interface TimelineClip {
   id: string;
   trackId: string;
   startTime: number;
@@ -20,6 +20,13 @@ interface TimelineClip {
     scale?: number;
     rotation?: number;
   };
+  // Media source reference
+  mediaId?: string;
+  file?: File;
+  // Visual data
+  thumbnails?: Array<{ dataUrl: string; timestamp: number }>;
+  waveform?: { peaks: number[]; duration: number };
+  preview?: string;
 }
 
 interface TimelineTrack {
@@ -50,6 +57,9 @@ export function VideoEditorPage() {
     stepForward: () => void;
     stepBackward: () => void;
   } | null>(null);
+
+  // Ref to media library panel for triggering file picker
+  const mediaLibraryRef = useRef<{ openFilePicker: () => void } | null>(null);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -113,6 +123,8 @@ export function VideoEditorPage() {
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
+    // handleDeleteClip and handleExportVideo are stable functions and don't need to be in deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedClipId, isPlaying]);
 
   const handleUpdateClip = (updates: Partial<TimelineClip>) => {
@@ -153,7 +165,8 @@ export function VideoEditorPage() {
   const selectedClip = clips.find((clip) => clip.id === selectedClipId);
 
   const handleImportMedia = () => {
-    // TODO: Implement media import
+    // Trigger file picker in MediaLibraryPanel
+    mediaLibraryRef.current?.openFilePicker();
   };
 
   const handleExportVideo = () => {
@@ -162,7 +175,7 @@ export function VideoEditorPage() {
 
   return (
     <EditorLayout
-      mediaLibrary={<MediaLibraryPanel />}
+      mediaLibrary={<MediaLibraryPanel ref={mediaLibraryRef} />}
       preview={
         <VideoPreviewPanel
           currentTime={currentTime}

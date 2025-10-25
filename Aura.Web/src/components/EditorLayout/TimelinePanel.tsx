@@ -124,6 +124,45 @@ const useStyles = makeStyles({
     border: `2px solid ${tokens.colorBrandForeground1}`,
     backgroundColor: tokens.colorBrandBackgroundHover,
   },
+  clipThumbnails: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    display: 'flex',
+    opacity: 0.6,
+    pointerEvents: 'none',
+  },
+  clipThumbnail: {
+    height: '100%',
+    objectFit: 'cover',
+    borderRight: `1px solid ${tokens.colorNeutralStroke2}`,
+  },
+  clipWaveform: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    display: 'flex',
+    alignItems: 'center',
+    gap: '1px',
+    padding: '4px',
+    opacity: 0.7,
+    pointerEvents: 'none',
+  },
+  waveformBar: {
+    flex: 1,
+    backgroundColor: tokens.colorNeutralForegroundOnBrand,
+    minWidth: '2px',
+    borderRadius: '1px',
+  },
+  clipLabel: {
+    position: 'relative',
+    zIndex: 1,
+    textShadow: '0 1px 2px rgba(0,0,0,0.5)',
+  },
   playhead: {
     position: 'absolute',
     top: 0,
@@ -156,6 +195,13 @@ interface TimelineClip {
   duration: number;
   label: string;
   type: 'video' | 'audio' | 'image';
+  // Media source reference
+  mediaId?: string;
+  file?: File;
+  // Visual data
+  thumbnails?: Array<{ dataUrl: string; timestamp: number }>;
+  waveform?: { peaks: number[]; duration: number };
+  preview?: string;
 }
 
 interface TimelineTrack {
@@ -300,9 +346,14 @@ export function TimelinePanel({
         id: `clip-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
         trackId,
         startTime: dropTime,
-        duration: 3, // Default duration
+        duration: mediaClip.duration || 3, // Use media duration or default to 3
         label: mediaClip.name,
         type: mediaClip.type,
+        mediaId: mediaClip.id,
+        file: mediaClip.file,
+        thumbnails: mediaClip.thumbnails,
+        waveform: mediaClip.waveform,
+        preview: mediaClip.preview,
       };
 
       onClipAdd?.(trackId, newClip);
@@ -441,7 +492,37 @@ export function TimelinePanel({
                       tabIndex={0}
                       aria-label={`${clip.label} clip`}
                     >
-                      {clip.label}
+                      {/* Render thumbnails for video clips */}
+                      {clip.type === 'video' && clip.thumbnails && clip.thumbnails.length > 0 && (
+                        <div className={styles.clipThumbnails}>
+                          {clip.thumbnails.map((thumbnail, idx) => (
+                            <img
+                              key={idx}
+                              src={thumbnail.dataUrl}
+                              alt=""
+                              className={styles.clipThumbnail}
+                              style={{ flex: 1 }}
+                            />
+                          ))}
+                        </div>
+                      )}
+                      
+                      {/* Render waveform for audio/video clips */}
+                      {(clip.type === 'audio' || (clip.type === 'video' && !clip.thumbnails)) && 
+                        clip.waveform && 
+                        clip.waveform.peaks.length > 0 && (
+                        <div className={styles.clipWaveform}>
+                          {clip.waveform.peaks.map((peak, idx) => (
+                            <div
+                              key={idx}
+                              className={styles.waveformBar}
+                              style={{ height: `${Math.max(2, peak * 100)}%` }}
+                            />
+                          ))}
+                        </div>
+                      )}
+                      
+                      <span className={styles.clipLabel}>{clip.label}</span>
                     </div>
                   ))}
               </div>

@@ -1,4 +1,4 @@
-import { useState, useRef, DragEvent } from 'react';
+import { useState, useRef, DragEvent, forwardRef, useImperativeHandle } from 'react';
 import {
   makeStyles,
   tokens,
@@ -13,6 +13,7 @@ import {
   MenuList,
   MenuItem,
   MenuPopover,
+  ProgressBar,
 } from '@fluentui/react-components';
 import {
   Add24Regular,
@@ -23,6 +24,13 @@ import {
   Delete24Regular,
   Rename24Regular,
 } from '@fluentui/react-icons';
+import {
+  generateVideoThumbnails,
+  generateWaveform,
+  getMediaDuration,
+  isSupportedMediaType,
+  getMediaPreview,
+} from '../../utils/mediaProcessing';
 
 const useStyles = makeStyles({
   container: {
@@ -161,6 +169,10 @@ export interface MediaClip {
   duration?: number;
   fileSize?: number;
   resolution?: string;
+  thumbnails?: Array<{ dataUrl: string; timestamp: number }>;
+  waveform?: { peaks: number[]; duration: number };
+  preview?: string;
+  uploadProgress?: number;
 }
 
 interface MediaLibraryPanelProps {
@@ -168,12 +180,24 @@ interface MediaLibraryPanelProps {
   onClipDragEnd?: () => void;
 }
 
-export function MediaLibraryPanel({ onClipDragStart, onClipDragEnd }: MediaLibraryPanelProps) {
+export interface MediaLibraryPanelRef {
+  openFilePicker: () => void;
+}
+
+export const MediaLibraryPanel = forwardRef<MediaLibraryPanelRef, MediaLibraryPanelProps>(
+  ({ onClipDragStart, onClipDragEnd }, ref) => {
   const styles = useStyles();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [clips, setClips] = useState<MediaClip[]>([]);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+
+  // Expose methods to parent component
+  useImperativeHandle(ref, () => ({
+    openFilePicker: () => {
+      fileInputRef.current?.click();
+    },
+  }));
 
   const formatFileSize = (bytes: number): string => {
     if (bytes < 1024) return `${bytes} B`;
@@ -199,23 +223,129 @@ export function MediaLibraryPanel({ onClipDragStart, onClipDragEnd }: MediaLibra
     }
   };
 
+  const processMediaFile = async (file: File, clipId: string, type: 'video' | 'audio' | 'image') => {
+    try {
+      // Update progress
+      setClips((prev) =>
+        prev.map((clip) =>
+          clip.id === clipId ? { ...clip, uploadProgress: 10 } : clip
+        )
+      );
+
+      // Get duration for audio/video files
+      let duration: number | undefined;
+      if (type === 'video' || type === 'audio') {
+        try {
+          duration = await getMediaDuration(file);
+        } catch (error) {
+          console.warn('Failed to get media duration:', error);
+        }
+      }
+
+      setClips((prev) =>
+        prev.map((clip) =>
+          clip.id === clipId ? { ...clip, uploadProgress: 30, duration } : clip
+        )
+      );
+
+      // Generate thumbnails for video files
+      let thumbnails: Array<{ dataUrl: string; timestamp: number }> | undefined;
+      if (type === 'video') {
+        try {
+          thumbnails = await generateVideoThumbnails(file, 5);
+        } catch (error) {
+          console.warn('Failed to generate thumbnails:', error);
+        }
+      }
+
+      setClips((prev) =>
+        prev.map((clip) =>
+          clip.id === clipId ? { ...clip, uploadProgress: 60, thumbnails } : clip
+        )
+      );
+
+      // Generate waveform for audio/video files
+      let waveform: { peaks: number[]; duration: number } | undefined;
+      if (type === 'video' || type === 'audio') {
+        try {
+          waveform = await generateWaveform(file, 100);
+        } catch (error) {
+          console.warn('Failed to generate waveform:', error);
+        }
+      }
+
+      setClips((prev) =>
+        prev.map((clip) =>
+          clip.id === clipId ? { ...clip, uploadProgress: 80, waveform } : clip
+        )
+      );
+
+      // Get preview image
+      let preview: string | undefined;
+      try {
+        const previewUrl = await getMediaPreview(file, type);
+        preview = previewUrl || undefined;
+      } catch (error) {
+        console.warn('Failed to generate preview:', error);
+      }
+
+      // Mark as complete
+      setClips((prev) =>
+        prev.map((clip) =>
+          clip.id === clipId ? { ...clip, uploadProgress: 100, preview } : clip
+        )
+      );
+
+      // Remove progress after a short delay
+      setTimeout(() => {
+        setClips((prev) =>
+          prev.map((clip) =>
+            clip.id === clipId ? { ...clip, uploadProgress: undefined } : clip
+          )
+        );
+      }, 1000);
+    } catch (error) {
+      console.error('Error processing media file:', error);
+      // Remove failed clip
+      setClips((prev) => prev.filter((clip) => clip.id !== clipId));
+    }
+  };
+
   const handleFiles = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
 
     setIsUploading(true);
 
-    // Simulate upload processing
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    const validFiles = Array.from(files).filter((file) => {
+      if (!isSupportedMediaType(file)) {
+        alert(`Unsupported file type: ${file.name}`);
+        return false;
+      }
+      return true;
+    });
 
-    const newClips: MediaClip[] = Array.from(files).map((file) => ({
+    if (validFiles.length === 0) {
+      setIsUploading(false);
+      return;
+    }
+
+    const newClips: MediaClip[] = validFiles.map((file) => ({
       id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       name: file.name,
       type: getClipType(file),
       file,
       fileSize: file.size,
+      uploadProgress: 0,
     }));
 
     setClips((prev) => [...prev, ...newClips]);
+
+    // Process each file
+    for (const clip of newClips) {
+      processMediaFile(clip.file, clip.id, clip.type);
+    }
+
+    setIsUploading(false);
     setIsUploading(false);
   };
 
@@ -347,7 +477,15 @@ export function MediaLibraryPanel({ onClipDragStart, onClipDragEnd }: MediaLibra
                       aria-label="Remove clip"
                     />
                     <CardPreview className={styles.clipPreview}>
-                      {getClipIcon(clip.type)}
+                      {clip.preview ? (
+                        <img 
+                          src={clip.preview} 
+                          alt={clip.name} 
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                        />
+                      ) : (
+                        getClipIcon(clip.type)
+                      )}
                     </CardPreview>
                     <CardHeader
                       className={styles.clipHeader}
@@ -357,10 +495,18 @@ export function MediaLibraryPanel({ onClipDragStart, onClipDragEnd }: MediaLibra
                             {clip.name}
                           </Text>
                           <Text className={styles.clipType}>{clip.type}</Text>
+                          {clip.duration && (
+                            <Text className={styles.clipMetadata}>
+                              {Math.floor(clip.duration)}s
+                            </Text>
+                          )}
                           {clip.fileSize && (
                             <Text className={styles.clipMetadata}>
                               {formatFileSize(clip.fileSize)}
                             </Text>
+                          )}
+                          {clip.uploadProgress !== undefined && clip.uploadProgress < 100 && (
+                            <ProgressBar value={clip.uploadProgress / 100} />
                           )}
                         </div>
                       }
@@ -395,4 +541,6 @@ export function MediaLibraryPanel({ onClipDragStart, onClipDragEnd }: MediaLibra
       </div>
     </div>
   );
-}
+});
+
+MediaLibraryPanel.displayName = 'MediaLibraryPanel';
