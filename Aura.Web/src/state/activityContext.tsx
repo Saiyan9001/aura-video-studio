@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useCallback, ReactNode, useEffect, useRef } from 'react';
-
+import { operationLogService } from '../services/operationLogService';
 export type ActivityStatus = 'pending' | 'running' | 'paused' | 'completed' | 'failed' | 'cancelled';
 
 export type ActivityCategory = 'import' | 'export' | 'analysis' | 'effects' | 'other';
@@ -73,6 +73,10 @@ interface ActivityContextType {
   operationHistory: OperationHistoryEntry[];
   resourceUsage: ResourceUsage | null;
   addActivity: (activity: Omit<Activity, 'id' | 'startTime' | 'status' | 'progress'>) => string;
+  addBatchOperation: (
+    parentTitle: string,
+    operations: Array<Omit<Activity, 'id' | 'startTime' | 'status' | 'progress' | 'parentId'>>
+  ) => { parentId: string; childIds: string[] };
   updateActivity: (id: string, updates: Partial<Activity>) => void;
   removeActivity: (id: string) => void;
   clearCompleted: () => void;
@@ -83,6 +87,7 @@ interface ActivityContextType {
   setPriority: (id: string, priority: number) => void;
   getOperationHistory: (limit?: number) => OperationHistoryEntry[];
   clearOperationHistory: () => void;
+  getBatchProgress: (parentId: string) => { completed: number; total: number; percentage: number };
 }
 
 const ActivityContext = createContext<ActivityContextType | undefined>(undefined);
@@ -158,6 +163,18 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
     };
     
     setActivities(prev => [...prev, newActivity]);
+    
+    // Log to operation log
+    operationLogService.info(
+      newActivity.title,
+      `Activity created: ${newActivity.message}`,
+      {
+        category: newActivity.category,
+        activityId: id,
+        parameters: newActivity.metadata,
+      }
+    );
+    
     return id;
   }, []);
 
@@ -175,6 +192,20 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
           updated.endTime = new Date();
           // Add to history when completed or failed
           addToHistory(updated);
+          
+          // Log to operation log
+          if (updates.status === 'completed') {
+            operationLogService.logActivity(updated, 'completed');
+          } else if (updates.status === 'failed') {
+            operationLogService.logActivity(updated, 'failed');
+          } else if (updates.status === 'cancelled') {
+            operationLogService.logActivity(updated, 'cancelled');
+          }
+        }
+        
+        // Log status changes to running
+        if (updates.status === 'running' && activity.status !== 'running') {
+          operationLogService.logActivity(updated, 'started');
         }
         
         return updated;
@@ -186,6 +217,72 @@ export function ActivityProvider({ children }: { children: ReactNode }) {
   const removeActivity = useCallback((id: string) => {
     setActivities(prev => prev.filter(activity => activity.id !== id));
   }, []);
+
+  const addBatchOperation = useCallback((
+    parentTitle: string,
+    operations: Array<Omit<Activity, 'id' | 'startTime' | 'status' | 'progress' | 'parentId'>>
+  ) => {
+    const parentId = `batch-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
+    // Create parent activity
+    const parentActivity: Activity = {
+      id: parentId,
+      type: 'other',
+      category: operations[0]?.category || 'other',
+      status: 'pending',
+      title: parentTitle,
+      message: `0 / ${operations.length} completed`,
+      progress: 0,
+      startTime: new Date(),
+      priority: 5,
+      metadata: {
+        isBatch: true,
+        totalOperations: operations.length,
+      },
+    };
+    
+    // Create child activities
+    const childIds: string[] = [];
+    const childActivities: Activity[] = operations.map(op => {
+      const childId = `activity-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      childIds.push(childId);
+      
+      return {
+        ...op,
+        id: childId,
+        status: 'pending',
+        progress: 0,
+        startTime: new Date(),
+        category: op.category || 'other',
+        priority: op.priority || 5,
+        parentId,
+      };
+    });
+    
+    setActivities(prev => [parentActivity, ...childActivities, ...prev]);
+    
+    // Log batch operation
+    operationLogService.info(
+      parentTitle,
+      `Batch operation created with ${operations.length} tasks`,
+      {
+        category: parentActivity.category,
+        activityId: parentId,
+        parameters: { operations: operations.length },
+      }
+    );
+    
+    return { parentId, childIds };
+  }, []);
+
+  const getBatchProgress = useCallback((parentId: string) => {
+    const children = activities.filter(a => a.parentId === parentId);
+    const completed = children.filter(a => a.status === 'completed' || a.status === 'failed').length;
+    const total = children.length;
+    const percentage = total > 0 ? (completed / total) * 100 : 0;
+    
+    return { completed, total, percentage };
+  }, [activities]);
 
   const clearCompleted = useCallback(() => {
     setActivities(prev => prev.filter(activity => activity.status !== 'completed'));
