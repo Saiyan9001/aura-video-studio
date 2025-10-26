@@ -144,7 +144,7 @@ export function EnhancedTimelineEditor() {
     }, 5000);
 
     return () => clearTimeout(timer);
-  }, [isDirty, timeline, jobId]);
+  }, [isDirty, timeline, jobId, saveTimeline]);
 
   // Warn before leaving with unsaved changes
   useEffect(() => {

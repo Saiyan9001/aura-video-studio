@@ -10,7 +10,7 @@ import {
   Image,
 } from '@fluentui/react-components';
 import { Search24Regular } from '@fluentui/react-icons';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { apiUrl } from '../../config/api';
 
 const useStyles = makeStyles({
@@ -97,11 +97,7 @@ export function AssetSuggestions({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    loadSuggestions();
-  }, [sceneHeading, sceneScript]);
-
-  const loadSuggestions = async () => {
+  const loadSuggestions = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -126,7 +122,11 @@ export function AssetSuggestions({
     } finally {
       setLoading(false);
     }
-  };
+  }, [sceneHeading, sceneScript]);
+
+  useEffect(() => {
+    loadSuggestions();
+  }, [loadSuggestions]);
 
   const handleAssetClick = (asset: AssetMatch) => {
     if (onSelectAsset) {

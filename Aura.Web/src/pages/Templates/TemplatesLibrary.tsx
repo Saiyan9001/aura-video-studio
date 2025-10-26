@@ -24,7 +24,7 @@ import {
   Field,
 } from '@fluentui/react-components';
 import { Search24Regular, Add24Regular, VideoClip24Regular } from '@fluentui/react-icons';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { TemplateCard } from '../../components/Templates/TemplateCard';
 import { TemplatePreview } from '../../components/Templates/TemplatePreview';
@@ -108,14 +108,6 @@ export default function TemplatesLibrary() {
   const [projectName, setProjectName] = useState('');
   const [creating, setCreating] = useState(false);
 
-  useEffect(() => {
-    loadTemplates();
-  }, []);
-
-  useEffect(() => {
-    filterTemplates();
-  }, [templates, searchQuery, selectedCategory]);
-
   const loadTemplates = async () => {
     try {
       setLoading(true);
@@ -138,7 +130,7 @@ export default function TemplatesLibrary() {
     }
   };
 
-  const filterTemplates = () => {
+  const filterTemplates = useCallback(() => {
     let filtered = [...templates];
 
     // Filter by category
@@ -158,7 +150,15 @@ export default function TemplatesLibrary() {
     }
 
     setFilteredTemplates(filtered);
-  };
+  }, [templates, searchQuery, selectedCategory]);
+
+  useEffect(() => {
+    loadTemplates();
+  }, []);
+
+  useEffect(() => {
+    filterTemplates();
+  }, [filterTemplates]);
 
   const handleTemplateClick = (template: TemplateListItem) => {
     setSelectedTemplate(template);

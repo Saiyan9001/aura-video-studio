@@ -9,7 +9,7 @@ import {
   Tooltip,
 } from '@fluentui/react-components';
 import { Speaker224Regular, Info16Regular } from '@fluentui/react-icons';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   audioIntelligenceService,
   AudioMixing,
@@ -109,11 +109,7 @@ export const AudioMixer: React.FC<AudioMixerProps> = ({
   const [frequencyConflicts, setFrequencyConflicts] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    loadMixingSuggestions();
-  }, [contentType, hasNarration, hasMusic, hasSoundEffects]);
-
-  const loadMixingSuggestions = async () => {
+  const loadMixingSuggestions = useCallback(async () => {
     setLoading(true);
     try {
       const request: MixingSuggestionsRequest = {
@@ -133,7 +129,11 @@ export const AudioMixer: React.FC<AudioMixerProps> = ({
     } finally {
       setLoading(false);
     }
-  };
+  }, [contentType, hasNarration, hasMusic, hasSoundEffects]);
+
+  useEffect(() => {
+    loadMixingSuggestions();
+  }, [loadMixingSuggestions]);
 
   const handleVolumeChange = (type: 'music' | 'narration' | 'soundEffects', value: number) => {
     if (!mixing) return;
