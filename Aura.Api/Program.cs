@@ -1,6 +1,7 @@
 using Aura.Api.Helpers;
 using Aura.Api.Middleware;
 using Aura.Api.Serialization;
+using Aura.Api.Validators;
 using Aura.Core.Hardware;
 using Aura.Core.Models;
 using Aura.Core.Orchestrator;
@@ -11,6 +12,7 @@ using Aura.Providers.Llm;
 using Aura.Providers.Tts;
 using Aura.Providers.Video;
 using Aura.Providers.Validation;
+using FluentValidation;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.FileProviders;
@@ -72,6 +74,12 @@ builder.Services.AddControllers()
     });
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+
+// Add FluentValidation
+builder.Services.AddValidatorsFromAssemblyContaining<Program>();
+
+// Add Configuration Validator
+builder.Services.AddSingleton<Aura.Api.Validation.ConfigurationValidator>();
 
 // Configure database
 const string MigrationsAssembly = "Aura.Api";
@@ -747,6 +755,20 @@ catch (Exception ex)
 Log.Information("=== Aura Video Studio API Starting ===");
 Log.Information("Initialization Phase 1: Service Registration Complete");
 
+// Validate configuration before proceeding
+Log.Information("Initialization Phase 1.5: Configuration Validation");
+var configValidator = app.Services.GetRequiredService<Aura.Api.Validation.ConfigurationValidator>();
+if (!configValidator.Validate())
+{
+    Log.Error("Configuration validation failed. Application may not function correctly.");
+    Log.Error("Please fix the configuration errors listed above before continuing.");
+    // Don't exit - let it try to start, but warn heavily
+}
+else
+{
+    Log.Information("Configuration validation completed successfully");
+}
+
 // Perform startup validation - warn on non-critical issues but continue
 Log.Information("Initialization Phase 2: Running Startup Validation");
 var startupValidator = app.Services.GetRequiredService<Aura.Api.Services.StartupValidator>();
@@ -769,6 +791,12 @@ app.UseCorrelationId();
 
 // Add global exception handling middleware
 app.UseExceptionHandling();
+
+// Add rate limiting middleware
+app.UseRateLimiting();
+
+// Add request/response logging middleware
+app.UseRequestResponseLogging();
 
 // Configure the HTTP request pipeline
 if (app.Environment.IsDevelopment())
