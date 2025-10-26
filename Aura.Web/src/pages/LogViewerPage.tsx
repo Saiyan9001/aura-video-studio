@@ -13,7 +13,7 @@ import {
   Caption1,
 } from '@fluentui/react-components';
 import { ArrowClockwise24Regular, Copy24Regular, Filter24Regular } from '@fluentui/react-icons';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 
 const useStyles = makeStyles({
   container: {
@@ -126,7 +126,7 @@ export function LogViewerPage() {
   const [logFile, setLogFile] = useState<string>('');
   const [copySuccess, setCopySuccess] = useState<string>('');
 
-  const fetchLogs = async () => {
+  const fetchLogs = useCallback(async () => {
     setLoading(true);
     try {
       const params = new URLSearchParams();
@@ -145,11 +145,11 @@ export function LogViewerPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [levelFilter, correlationIdFilter, lines]);
 
   useEffect(() => {
     fetchLogs();
-  }, []);
+  }, [fetchLogs]);
 
   const handleRefresh = () => {
     fetchLogs();

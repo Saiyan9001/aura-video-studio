@@ -17,7 +17,7 @@ import {
   Copy24Regular,
   Info24Regular,
 } from '@fluentui/react-icons';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useEnginesStore } from '../../state/engines';
 import { EngineCard } from './EngineCard';
 import { FFmpegCard } from './FFmpegCard';
@@ -108,10 +108,14 @@ export function EnginesTab() {
   } = useEnginesStore();
   const [copiedPath, setCopiedPath] = useState<string | null>(null);
 
-  useEffect(() => {
+  const loadEnginesData = useCallback(() => {
     fetchEngines();
     fetchInstances();
-  }, []);
+  }, [fetchEngines, fetchInstances]);
+
+  useEffect(() => {
+    loadEnginesData();
+  }, [loadEnginesData]);
 
   const copyToClipboard = async (text: string, id: string) => {
     try {

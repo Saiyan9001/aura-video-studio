@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { learningService } from '../../services/learning/learningService';
 import type {
   DecisionPattern,
@@ -27,11 +27,7 @@ export const LearningDashboard: React.FC<LearningDashboardProps> = ({ profileId 
   );
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    loadData();
-  }, [profileId]);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
@@ -53,7 +49,11 @@ export const LearningDashboard: React.FC<LearningDashboardProps> = ({ profileId 
     } finally {
       setLoading(false);
     }
-  };
+  }, [profileId]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   const handleAnalyze = async () => {
     try {

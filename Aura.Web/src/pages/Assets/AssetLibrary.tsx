@@ -16,7 +16,7 @@ import {
   ImageAdd24Regular,
   Image24Regular,
 } from '@fluentui/react-icons';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { CollectionsPanel } from '../../components/Assets/CollectionsPanel';
 import { StockImageSearch } from '../../components/Assets/StockImageSearch';
 import { assetService } from '../../services/assetService';
@@ -140,11 +140,7 @@ export const AssetLibrary: React.FC = () => {
   const [showStockSearch, setShowStockSearch] = useState(false);
   const [selectedCollectionId, setSelectedCollectionId] = useState<string | undefined>();
 
-  useEffect(() => {
-    loadAssets();
-  }, [searchQuery, filterType]);
-
-  const loadAssets = async () => {
+  const loadAssets = useCallback(async () => {
     setLoading(true);
     try {
       const result = await assetService.getAssets(
@@ -160,7 +156,11 @@ export const AssetLibrary: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [searchQuery, filterType]);
+
+  useEffect(() => {
+    loadAssets();
+  }, [loadAssets]);
 
   const handleUpload = () => {
     const input = document.createElement('input');

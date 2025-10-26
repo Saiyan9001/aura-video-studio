@@ -18,7 +18,7 @@ import {
   ChartMultiple24Regular,
   Lightbulb24Regular,
 } from '@fluentui/react-icons';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   performanceAnalyticsService,
   type PerformanceInsights,
@@ -166,11 +166,7 @@ export function AnalyticsDashboard() {
   // Use a default profile ID - in a real app, this would come from user context/auth
   const [profileId] = useState('default');
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setLoading(true);
     try {
       const [insightsData, videosData] = await Promise.all([
@@ -184,7 +180,11 @@ export function AnalyticsDashboard() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [profileId]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   const handleImportCSV = () => {
     // Create a file input element and trigger it

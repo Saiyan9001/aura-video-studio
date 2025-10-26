@@ -28,7 +28,7 @@ import {
   Warning24Regular,
   Add24Regular,
 } from '@fluentui/react-icons';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { apiUrl } from '../../config/api';
 import { useNotifications } from '../Notifications/Toasts';
 
@@ -150,12 +150,7 @@ export function ModelManager({ engineId, engineName }: ModelManagerProps) {
   const [isAddingFolder, setIsAddingFolder] = useState(false);
   const [showAddFolderDialog, setShowAddFolderDialog] = useState(false);
 
-  useEffect(() => {
-    loadModels();
-    loadExternalFolders();
-  }, [engineId]);
-
-  const loadModels = async () => {
+  const loadModels = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     try {
@@ -170,9 +165,9 @@ export function ModelManager({ engineId, engineName }: ModelManagerProps) {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [engineId]);
 
-  const loadExternalFolders = async () => {
+  const loadExternalFolders = useCallback(async () => {
     try {
       const response = await fetch(apiUrl('/api/models/external-folders'));
       if (response.ok) {
@@ -182,7 +177,12 @@ export function ModelManager({ engineId, engineName }: ModelManagerProps) {
     } catch (err) {
       console.error('Failed to load external folders:', err);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    loadModels();
+    loadExternalFolders();
+  }, [loadModels, loadExternalFolders]);
 
   const handleAddExternalFolder = async () => {
     if (!addFolderPath.trim()) {

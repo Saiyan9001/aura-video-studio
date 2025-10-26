@@ -16,7 +16,7 @@ import {
   Info24Regular,
   ArrowRight24Regular,
 } from '@fluentui/react-icons';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { apiUrl } from '../config/api';
 
 const useStyles = makeStyles({
@@ -122,7 +122,7 @@ export function FirstRunDiagnostics({
   const [result, setResult] = useState<FirstRunDiagnosticsResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const runDiagnostics = async () => {
+  const runDiagnostics = useCallback(async () => {
     setLoading(true);
     setError(null);
 
@@ -147,13 +147,13 @@ export function FirstRunDiagnostics({
     } finally {
       setLoading(false);
     }
-  };
+  }, [onReady, onNeedsSetup]);
 
   useEffect(() => {
     if (autoRun) {
       runDiagnostics();
     }
-  }, [autoRun]);
+  }, [autoRun, runDiagnostics]);
 
   const getSeverityIcon = (severity: string) => {
     switch (severity) {
