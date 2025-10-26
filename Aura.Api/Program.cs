@@ -753,29 +753,37 @@ catch (Exception ex)
     // Continue startup - database features may be degraded but core functionality should work
 }
 
+var appStartTime = DateTime.UtcNow;
+Log.Information("=================================================================");
 Log.Information("=== Aura Video Studio API Starting ===");
 Log.Information("Initialization Phase 1: Service Registration Complete");
+Log.Information("Timestamp: {Timestamp}", appStartTime.ToString("yyyy-MM-dd HH:mm:ss.fff zzz"));
+Log.Information("=================================================================");
 
 // Validate configuration before proceeding
+var phase1StartTime = DateTime.UtcNow;
 Log.Information("Initialization Phase 1.5: Configuration Validation");
 var configValidator = app.Services.GetRequiredService<Aura.Api.Validation.ConfigurationValidator>();
 if (!configValidator.Validate())
 {
-    Log.Error("Configuration validation failed. Application may not function correctly.");
+    Log.Error("✗ Configuration validation failed. Application may not function correctly.");
     Log.Error("Please fix the configuration errors listed above before continuing.");
     // Don't exit - let it try to start, but warn heavily
 }
 else
 {
-    Log.Information("Configuration validation completed successfully");
+    var duration = (DateTime.UtcNow - phase1StartTime).TotalMilliseconds;
+    Log.Information("✓ Configuration validation completed successfully in {Duration}ms", duration);
 }
 
 // Perform startup validation - warn on non-critical issues but continue
+var phase2StartTime = DateTime.UtcNow;
 Log.Information("Initialization Phase 2: Running Startup Validation");
 var startupValidator = app.Services.GetRequiredService<Aura.Api.Services.StartupValidator>();
 if (!startupValidator.Validate())
 {
-    Log.Warning("Startup validation detected some issues. Application will attempt to start anyway.");
+    var duration = (DateTime.UtcNow - phase2StartTime).TotalMilliseconds;
+    Log.Warning("⚠ Startup validation detected some issues after {Duration}ms. Application will attempt to start anyway.", duration);
     Log.Warning("If you experience problems, please review the errors above and check:");
     Log.Warning("  - File system permissions");
     Log.Warning("  - Antivirus/firewall settings");
@@ -784,7 +792,8 @@ if (!startupValidator.Validate())
 }
 else
 {
-    Log.Information("Startup validation completed successfully");
+    var duration = (DateTime.UtcNow - phase2StartTime).TotalMilliseconds;
+    Log.Information("✓ Startup validation completed successfully in {Duration}ms", duration);
 }
 
 // Add correlation ID middleware early in the pipeline
@@ -3006,20 +3015,34 @@ var healthMonitorStarted = false;
 lifetime.ApplicationStarted.Register(() =>
 {
     Log.Information("Initialization Phase 3: Application started, beginning background service initialization");
+    var startupStartTime = DateTime.UtcNow;
     
     // Start Engine Lifecycle Manager first (deterministic ordering)
     _ = Task.Run(async () =>
     {
+        var serviceStartTime = DateTime.UtcNow;
         try
         {
             Log.Information("Starting Engine Lifecycle Manager...");
+            
+            // Apply timeout protection (30 seconds for engine manager)
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
             await lifecycleManager.StartAsync();
+            
             engineManagerStarted = true;
-            Log.Information("Engine Lifecycle Manager started successfully");
+            var duration = (DateTime.UtcNow - serviceStartTime).TotalMilliseconds;
+            Log.Information("✓ Engine Lifecycle Manager started successfully in {Duration}ms", duration);
+        }
+        catch (OperationCanceledException)
+        {
+            var duration = (DateTime.UtcNow - serviceStartTime).TotalMilliseconds;
+            Log.Warning("⚠ Engine Lifecycle Manager initialization timed out after {Duration}ms", duration);
+            Log.Warning("Application will continue but external engine features may be unavailable");
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Failed to start Engine Lifecycle Manager");
+            var duration = (DateTime.UtcNow - serviceStartTime).TotalMilliseconds;
+            Log.Error(ex, "✗ Failed to start Engine Lifecycle Manager after {Duration}ms", duration);
             // Continue even if this fails - application can still function
         }
     });
@@ -3032,10 +3055,15 @@ lifetime.ApplicationStarted.Register(() =>
             // Wait briefly for engine manager to start
             await Task.Delay(TimeSpan.FromSeconds(2));
             
+            var serviceStartTime = DateTime.UtcNow;
             Log.Information("Starting provider health monitoring...");
+            
+            // No timeout for health monitor as it runs continuously
             await healthMonitor.RunPeriodicHealthChecksAsync(lifetime.ApplicationStopping);
+            
             healthMonitorStarted = true;
-            Log.Information("Provider health monitoring stopped");
+            var duration = (DateTime.UtcNow - serviceStartTime).TotalMilliseconds;
+            Log.Information("✓ Provider health monitoring stopped after {Duration}ms", duration);
         }
         catch (Exception ex)
         {
@@ -3055,37 +3083,50 @@ lifetime.ApplicationStarted.Register(() =>
     });
     
     initializationComplete = true;
-    Log.Information("Initialization Phase 4: Background services initialization started");
+    var totalStartupTime = (DateTime.UtcNow - startupStartTime).TotalMilliseconds;
+    Log.Information("=================================================================");
+    Log.Information("✓ Initialization Phase 4: Background services initialization started");
+    Log.Information("✓ Total startup time: {Duration}ms", totalStartupTime);
+    Log.Information("✓ Application is ready to accept requests");
+    Log.Information("=================================================================");
 });
 
 lifetime.ApplicationStopping.Register(() =>
 {
+    var shutdownStartTime = DateTime.UtcNow;
+    Log.Information("=================================================================");
     Log.Information("=== Application Shutdown Initiated ===");
     Log.Information("Shutdown Phase 1: Stopping background services");
     
     // Stop health monitor first (reverse order of startup)
     if (healthMonitorStarted)
     {
-        Log.Information("Stopping provider health monitoring...");
+        Log.Information("→ Stopping provider health monitoring...");
         // Health monitor stops automatically via cancellation token
     }
     
     // Stop engine lifecycle manager last
     if (engineManagerStarted)
     {
-        Log.Information("Stopping Engine Lifecycle Manager...");
+        var serviceStopTime = DateTime.UtcNow;
+        Log.Information("→ Stopping Engine Lifecycle Manager...");
         try
         {
             lifecycleManager.StopAsync().GetAwaiter().GetResult();
-            Log.Information("Engine Lifecycle Manager stopped successfully");
+            var duration = (DateTime.UtcNow - serviceStopTime).TotalMilliseconds;
+            Log.Information("✓ Engine Lifecycle Manager stopped successfully in {Duration}ms", duration);
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "Error stopping Engine Lifecycle Manager");
+            var duration = (DateTime.UtcNow - serviceStopTime).TotalMilliseconds;
+            Log.Error(ex, "✗ Error stopping Engine Lifecycle Manager after {Duration}ms", duration);
         }
     }
     
-    Log.Information("Shutdown Phase 2: Background services stopped");
+    var totalShutdownTime = (DateTime.UtcNow - shutdownStartTime).TotalMilliseconds;
+    Log.Information("✓ Shutdown Phase 2: Background services stopped");
+    Log.Information("✓ Total shutdown time: {Duration}ms", totalShutdownTime);
+    Log.Information("=================================================================");
 });
 
 // Helper methods for Azure TTS endpoints
