@@ -12,7 +12,7 @@ import {
   OptionOnSelectData,
 } from '@fluentui/react-components';
 import { Search24Regular, MusicNote224Regular, Play24Regular } from '@fluentui/react-icons';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   audioIntelligenceService,
   MusicTrack,
@@ -94,11 +94,7 @@ export const MusicSelector: React.FC<MusicSelectorProps> = ({ onSelect, selected
   const [loading, setLoading] = useState(false);
   const [searchParams, setSearchParams] = useState<MusicSearchParams>({});
 
-  useEffect(() => {
-    loadMusicLibrary();
-  }, [searchParams]);
-
-  const loadMusicLibrary = async () => {
+  const loadMusicLibrary = useCallback(async () => {
     setLoading(true);
     try {
       const { tracks } = await audioIntelligenceService.getMusicLibrary(searchParams);
@@ -108,7 +104,11 @@ export const MusicSelector: React.FC<MusicSelectorProps> = ({ onSelect, selected
     } finally {
       setLoading(false);
     }
-  };
+  }, [searchParams]);
+
+  useEffect(() => {
+    loadMusicLibrary();
+  }, [loadMusicLibrary]);
 
   const handleMoodChange = (_: unknown, data: OptionOnSelectData) => {
     setSearchParams({ ...searchParams, mood: data.value as MusicMood });

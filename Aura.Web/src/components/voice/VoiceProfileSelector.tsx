@@ -11,7 +11,7 @@ import {
   Badge,
 } from '@fluentui/react-components';
 import { MicRegular, SearchRegular, PlayRegular } from '@fluentui/react-icons';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { apiUrl } from '../../config/api';
 
 const useStyles = makeStyles({
@@ -126,76 +126,7 @@ export const VoiceProfileSelector: React.FC<VoiceProfileSelectorProps> = ({
   const [genderFilter, setGenderFilter] = useState<string>('all');
   const [localeFilter, setLocaleFilter] = useState<string>('all');
 
-  useEffect(() => {
-    loadVoices();
-  }, []);
-
-  useEffect(() => {
-    filterVoices();
-  }, [searchQuery, providerFilter, genderFilter, localeFilter, voices]);
-
-  const loadVoices = async () => {
-    setLoading(true);
-    try {
-      // Call API to get available voices
-      const response = await fetch(`${apiUrl}/api/v1/voices`);
-      if (response.ok) {
-        const data = await response.json();
-        setVoices(data.voices || []);
-      } else {
-        // Fallback to mock data if API not available
-        console.warn('Voice API not available, using mock data');
-        const mockVoices: VoiceDescriptor[] = [
-          {
-            id: 'azure-jenny',
-            name: 'Jenny',
-            provider: 'Azure',
-            locale: 'en-US',
-            gender: 'Female',
-            voiceType: 'Neural',
-            availableStyles: ['cheerful', 'sad', 'angry', 'friendly'],
-            description: 'Natural female voice with emotion support',
-          },
-          {
-            id: 'azure-guy',
-            name: 'Guy',
-            provider: 'Azure',
-            locale: 'en-US',
-            gender: 'Male',
-            voiceType: 'Neural',
-            availableStyles: ['newscast', 'friendly', 'shouting'],
-            description: 'Professional male voice for narration',
-          },
-          {
-            id: 'elevenlabs-rachel',
-            name: 'Rachel',
-            provider: 'ElevenLabs',
-            locale: 'en-US',
-            gender: 'Female',
-            voiceType: 'Neural',
-            description: 'High-quality AI voice with natural inflection',
-          },
-          {
-            id: 'playht-james',
-            name: 'James',
-            provider: 'PlayHT',
-            locale: 'en-GB',
-            gender: 'Male',
-            voiceType: 'Neural',
-            description: 'British English male voice',
-          },
-        ];
-
-        setVoices(mockVoices);
-      }
-    } catch (error) {
-      console.error('Failed to load voices:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const filterVoices = () => {
+  const filterVoices = useCallback(() => {
     let filtered = voices;
 
     if (searchQuery) {
@@ -218,7 +149,15 @@ export const VoiceProfileSelector: React.FC<VoiceProfileSelectorProps> = ({
     }
 
     setFilteredVoices(filtered);
-  };
+  }, [searchQuery, providerFilter, genderFilter, localeFilter, voices]);
+
+  useEffect(() => {
+    loadVoices();
+  }, []);
+
+  useEffect(() => {
+    filterVoices();
+  }, [filterVoices]);
 
   const handlePlaySample = async (voiceId: string, event: React.MouseEvent) => {
     event.stopPropagation();

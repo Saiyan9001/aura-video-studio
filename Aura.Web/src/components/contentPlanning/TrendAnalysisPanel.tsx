@@ -11,7 +11,7 @@ import {
   Spinner,
 } from '@fluentui/react-components';
 import { ArrowTrendingRegular, SearchRegular } from '@fluentui/react-icons';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { contentPlanningService, TrendData } from '../../services/contentPlanningService';
 
 const useStyles = makeStyles({
@@ -102,11 +102,7 @@ export const TrendAnalysisPanel: React.FC = () => {
 
   const platforms = ['YouTube', 'TikTok', 'Instagram'];
 
-  useEffect(() => {
-    loadPlatformTrends();
-  }, [platform]);
-
-  const loadPlatformTrends = async () => {
+  const loadPlatformTrends = useCallback(async () => {
     setLoading(true);
     try {
       const response = await contentPlanningService.getPlatformTrends(
@@ -119,7 +115,11 @@ export const TrendAnalysisPanel: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [platform, category]);
+
+  useEffect(() => {
+    loadPlatformTrends();
+  }, [loadPlatformTrends]);
 
   const handleAnalyze = async () => {
     setLoading(true);

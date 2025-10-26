@@ -16,7 +16,7 @@ import {
   Lightbulb24Regular,
   ArrowClockwise24Regular,
 } from '@fluentui/react-icons';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useQualityDashboardStore } from '../../state/qualityDashboard';
 import { ExportControls } from './ExportControls';
 import { HistoricalTrendsGraph } from './HistoricalTrendsGraph';
@@ -67,9 +67,13 @@ export const QualityDashboard: React.FC = () => {
   const [selectedTab, setSelectedTab] = useState<string>('overview');
   const { isLoading, error, refreshAll } = useQualityDashboardStore();
 
-  useEffect(() => {
+  const refreshData = useCallback(() => {
     refreshAll();
-  }, []);
+  }, [refreshAll]);
+
+  useEffect(() => {
+    refreshData();
+  }, [refreshData]);
 
   const handleRefresh = () => {
     refreshAll();

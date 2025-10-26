@@ -10,7 +10,7 @@ import {
   Spinner,
 } from '@fluentui/react-components';
 import { CalendarRegular } from '@fluentui/react-icons';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { contentPlanningService, ScheduledContent } from '../../services/contentPlanningService';
 
 const useStyles = makeStyles({
@@ -98,11 +98,7 @@ export const ContentCalendarView: React.FC = () => {
   const [platform, setPlatform] = useState<string>('All');
   const [currentMonth, setCurrentMonth] = useState(new Date());
 
-  useEffect(() => {
-    loadScheduledContent();
-  }, [currentMonth, platform]);
-
-  const loadScheduledContent = async () => {
+  const loadScheduledContent = useCallback(async () => {
     setLoading(true);
     try {
       const startDate = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
@@ -119,7 +115,11 @@ export const ContentCalendarView: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentMonth, platform]);
+
+  useEffect(() => {
+    loadScheduledContent();
+  }, [loadScheduledContent]);
 
   const getDaysInMonth = () => {
     const year = currentMonth.getFullYear();
