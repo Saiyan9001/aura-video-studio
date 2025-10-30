@@ -357,6 +357,98 @@ public class LlmProviderPromptIntegrationTests
 
     #endregion
 
+    #region Gemini Provider Tests
+
+    [Fact]
+    public async Task GeminiProvider_AnalyzeSceneImportanceAsync_Should_UseEnhancedPromptTemplates()
+    {
+        // Arrange
+        var mockResponse = new
+        {
+            candidates = new[]
+            {
+                new
+                {
+                    content = new
+                    {
+                        parts = new[]
+                        {
+                            new
+                            {
+                                text = JsonSerializer.Serialize(new
+                                {
+                                    importance = 88.0,
+                                    complexity = 72.0,
+                                    emotionalIntensity = 62.0,
+                                    informationDensity = "high",
+                                    optimalDurationSeconds = 11.0,
+                                    transitionType = "dissolve",
+                                    reasoning = "Gemini test reasoning"
+                                })
+                            }
+                        }
+                    }
+                }
+            }
+        };
+
+        var mockHttpHandler = new Mock<HttpMessageHandler>();
+        string? capturedRequestBody = null;
+
+        mockHttpHandler.Protected()
+            .Setup<Task<HttpResponseMessage>>(
+                "SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>())
+            .ReturnsAsync((HttpRequestMessage request, CancellationToken _) =>
+            {
+                capturedRequestBody = request.Content?.ReadAsStringAsync().Result;
+                return new HttpResponseMessage
+                {
+                    StatusCode = HttpStatusCode.OK,
+                    Content = new StringContent(JsonSerializer.Serialize(mockResponse))
+                };
+            });
+
+        var httpClient = new HttpClient(mockHttpHandler.Object);
+        var provider = new GeminiLlmProvider(
+            NullLogger<GeminiLlmProvider>.Instance,
+            httpClient,
+            "AIzaSyABCDEFGH1234567890IJKLMNOPQRSTUVWXYZ"); // Valid format API key
+
+        var originalStrictSchema = EnhancedPromptTemplates.ProviderPromptConfig.StrictSchema;
+        EnhancedPromptTemplates.ProviderPromptConfig.StrictSchema = true;
+
+        try
+        {
+            // Act
+            var result = await provider.AnalyzeSceneImportanceAsync(
+                "Gemini test scene",
+                "Gemini previous scene",
+                "Gemini goal",
+                CancellationToken.None);
+
+            // Assert
+            Assert.NotNull(capturedRequestBody);
+
+            // Verify enhanced templates are used
+            Assert.Contains("importance", capturedRequestBody, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("complexity", capturedRequestBody, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("optimalDurationSeconds", capturedRequestBody, StringComparison.OrdinalIgnoreCase);
+
+            // Verify result
+            Assert.NotNull(result);
+            Assert.Equal(88.0, result.Importance);
+            Assert.Equal(72.0, result.Complexity);
+        }
+        finally
+        {
+            EnhancedPromptTemplates.ProviderPromptConfig.StrictSchema = originalStrictSchema;
+        }
+    }
+
+    #endregion
+
     #region Schema Toggle Tests
 
     [Fact]
