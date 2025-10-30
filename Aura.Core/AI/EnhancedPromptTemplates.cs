@@ -34,6 +34,45 @@ public static class EnhancedPromptTemplates
     public static PromptMode CurrentMode { get; set; } = PromptMode.Static;
 
     /// <summary>
+    /// Schema mode for scene analysis prompts
+    /// </summary>
+    public enum SchemaMode
+    {
+        /// <summary>
+        /// Compact schema with essential fields only
+        /// </summary>
+        Compact,
+        
+        /// <summary>
+        /// Strict schema with explicit JSON structure and validation
+        /// </summary>
+        StrictSchema
+    }
+
+    /// <summary>
+    /// Configuration for provider prompts (PR 1 feature flag)
+    /// </summary>
+    public static class ProviderPromptConfig
+    {
+        /// <summary>
+        /// Enable or disable strict schema mode for scene analysis.
+        /// When true, uses explicit JSON schema with few-shot examples.
+        /// Default: true (strict schema enabled)
+        /// </summary>
+        public static bool StrictSchema { get; set; } = true;
+
+        /// <summary>
+        /// Voice style configuration for script generation
+        /// </summary>
+        public static string VoiceStyle { get; set; } = "natural";
+
+        /// <summary>
+        /// Number of few-shot examples to include in scene analysis prompts
+        /// </summary>
+        public static int ExampleCount { get; set; } = 2;
+    }
+
+    /// <summary>
     /// System prompt for video script generation with emphasis on quality and naturalness
     /// </summary>
     public static string GetSystemPromptForScriptGeneration()
@@ -359,6 +398,145 @@ Provide specific, actionable feedback for improvement, focusing on making conten
         sb.AppendLine($"- Specific issues found (if any)");
         sb.AppendLine($"- Concrete suggestions for improvement");
         sb.AppendLine($"- What works well that should be preserved");
+
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// System prompt for scene analysis with explicit JSON schema.
+    /// Schema version: v1.0-strict (for PR 2 parser targeting)
+    /// </summary>
+    public static string GetSystemPromptForSceneAnalysis()
+    {
+        var schemaMode = ProviderPromptConfig.StrictSchema ? SchemaMode.StrictSchema : SchemaMode.Compact;
+
+        if (schemaMode == SchemaMode.StrictSchema)
+        {
+            return @"You are a video pacing expert analyzing scenes for optimal timing and transitions.
+
+CRITICAL: Your response must be VALID JSON and NOTHING ELSE. No explanatory text before or after the JSON.
+
+OUTPUT FORMAT - You must return a JSON object with this EXACT schema:
+{
+  ""importance"": <number 0-100>,
+  ""complexity"": <number 0-100>,
+  ""emotionalIntensity"": <number 0-100>,
+  ""informationDensity"": <string: ""low"" | ""medium"" | ""high"">,
+  ""optimalDurationSeconds"": <number>,
+  ""transitionType"": <string: ""cut"" | ""fade"" | ""dissolve"">,
+  ""reasoning"": <string>
+}
+
+FIELD DEFINITIONS:
+- importance: How critical is this scene to the video's message (0=skippable, 100=essential)
+- complexity: How complex is the information presented (0=simple, 100=highly complex)
+- emotionalIntensity: Emotional impact level (0=neutral, 100=highly emotional)
+- informationDensity: Amount of information (""low"", ""medium"", or ""high"" ONLY)
+- optimalDurationSeconds: Recommended duration in seconds (typically 5-15 seconds)
+- transitionType: Recommended transition (""cut"", ""fade"", or ""dissolve"" ONLY)
+- reasoning: Brief explanation (1-2 sentences maximum)
+
+ANALYSIS PRINCIPLES:
+- High importance scenes deserve longer duration
+- Complex information needs more time to process
+- High emotional intensity benefits from dissolve/fade transitions
+- Dense information requires slower pacing
+- Consider flow from previous scene to current scene";
+        }
+        else
+        {
+            return @"You are a video pacing expert. Analyze scenes for optimal timing. 
+Return your response ONLY as valid JSON with no additional text.";
+        }
+    }
+
+    /// <summary>
+    /// Build scene analysis prompt with optional few-shot examples.
+    /// Targets schema version v1.0-strict for downstream parser compatibility.
+    /// </summary>
+    public static string BuildSceneAnalysisPrompt(
+        string sceneText,
+        string? previousSceneText,
+        string videoGoal)
+    {
+        var sb = new StringBuilder();
+        var schemaMode = ProviderPromptConfig.StrictSchema ? SchemaMode.StrictSchema : SchemaMode.Compact;
+        var exampleCount = ProviderPromptConfig.ExampleCount;
+
+        if (schemaMode == SchemaMode.StrictSchema && exampleCount > 0)
+        {
+            sb.AppendLine("FEW-SHOT EXAMPLES:");
+            sb.AppendLine();
+
+            if (exampleCount >= 1)
+            {
+                sb.AppendLine("Example 1 - Opening hook:");
+                sb.AppendLine("Scene: \"Have you ever wondered why your phone battery dies so fast?\"");
+                sb.AppendLine("Goal: Educational tech tips");
+                sb.AppendLine("Output:");
+                sb.AppendLine(@"{
+  ""importance"": 95,
+  ""complexity"": 20,
+  ""emotionalIntensity"": 60,
+  ""informationDensity"": ""low"",
+  ""optimalDurationSeconds"": 4,
+  ""transitionType"": ""cut"",
+  ""reasoning"": ""Strong hook requires quick pacing. High importance as it captures attention. Low complexity question with high relatability.""
+}");
+                sb.AppendLine();
+            }
+
+            if (exampleCount >= 2)
+            {
+                sb.AppendLine("Example 2 - Educational content:");
+                sb.AppendLine("Scene: \"The lithium-ion battery works through a chemical reaction between the anode and cathode. When you charge your phone, lithium ions move from the cathode to the anode, storing energy.\"");
+                sb.AppendLine("Goal: Educational tech tips");
+                sb.AppendLine("Output:");
+                sb.AppendLine(@"{
+  ""importance"": 75,
+  ""complexity"": 80,
+  ""emotionalIntensity"": 30,
+  ""informationDensity"": ""high"",
+  ""optimalDurationSeconds"": 12,
+  ""transitionType"": ""dissolve"",
+  ""reasoning"": ""Complex technical explanation needs longer duration. High information density requires slower pacing. Dissolve transition helps viewer process information smoothly.""
+}");
+                sb.AppendLine();
+            }
+
+            sb.AppendLine("---");
+            sb.AppendLine();
+        }
+
+        sb.AppendLine("YOUR TASK:");
+        sb.AppendLine();
+        sb.AppendLine($"Analyze this scene and return ONLY the JSON object (no other text):");
+        sb.AppendLine();
+        sb.AppendLine($"Scene: {sceneText}");
+        
+        if (!string.IsNullOrEmpty(previousSceneText))
+        {
+            sb.AppendLine($"Previous scene: {previousSceneText}");
+        }
+        
+        sb.AppendLine($"Video goal: {videoGoal}");
+        sb.AppendLine();
+
+        if (schemaMode == SchemaMode.StrictSchema)
+        {
+            sb.AppendLine("REMEMBER: Return ONLY the JSON object matching the schema. No explanatory text.");
+        }
+        else
+        {
+            sb.AppendLine(@"Respond with ONLY the JSON object with fields:
+- importance (0-100)
+- complexity (0-100)
+- emotionalIntensity (0-100)
+- informationDensity (""low""|""medium""|""high"")
+- optimalDurationSeconds (number)
+- transitionType (""cut""|""fade""|""dissolve"")
+- reasoning (string)");
+        }
 
         return sb.ToString();
     }

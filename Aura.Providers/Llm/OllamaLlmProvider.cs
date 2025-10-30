@@ -180,24 +180,9 @@ public class OllamaLlmProvider : ILlmProvider
 
         try
         {
-            // Build prompt for scene analysis
-            var systemPrompt = "You are a video pacing expert. Analyze scenes for optimal timing. " +
-                              "Return your response ONLY as valid JSON with no additional text.";
-            
-            var userPrompt = $@"Analyze this scene and return JSON with:
-- importance (0-100): How critical is this scene to the video's message
-- complexity (0-100): How complex is the information presented
-- emotionalIntensity (0-100): Emotional impact level
-- informationDensity (""low""|""medium""|""high""): Amount of information
-- optimalDurationSeconds (number): Recommended duration in seconds
-- transitionType (""cut""|""fade""|""dissolve""): Recommended transition
-- reasoning (string): Brief explanation
-
-Scene: {sceneText}
-{(previousSceneText != null ? $"Previous scene: {previousSceneText}" : "")}
-Video goal: {videoGoal}
-
-Respond with ONLY the JSON object, no other text:";
+            // Use centralized scene analysis prompt templates
+            var systemPrompt = EnhancedPromptTemplates.GetSystemPromptForSceneAnalysis();
+            var userPrompt = EnhancedPromptTemplates.BuildSceneAnalysisPrompt(sceneText, previousSceneText, videoGoal);
 
             var prompt = $"{systemPrompt}\n\n{userPrompt}";
 
