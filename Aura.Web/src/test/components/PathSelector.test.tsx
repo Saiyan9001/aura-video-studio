@@ -181,4 +181,127 @@ describe('PathSelector Component', () => {
       expect(mockOnChange).toHaveBeenCalledWith('C:\\detected\\path.exe');
     });
   });
+
+  it('should render clear button when value is set and showClearButton is true', () => {
+    render(
+      <FluentProvider theme={webLightTheme}>
+        <PathSelector
+          label="Test Path"
+          value="C:\\test\\path.exe"
+          onChange={mockOnChange}
+          showClearButton={true}
+        />
+      </FluentProvider>
+    );
+
+    const clearButton = screen.getByTitle('Clear path');
+    expect(clearButton).toBeInTheDocument();
+  });
+
+  it('should not render clear button when value is empty', () => {
+    render(
+      <FluentProvider theme={webLightTheme}>
+        <PathSelector label="Test Path" value="" onChange={mockOnChange} showClearButton={true} />
+      </FluentProvider>
+    );
+
+    const clearButton = screen.queryByTitle('Clear path');
+    expect(clearButton).not.toBeInTheDocument();
+  });
+
+  it('should call onChange with empty string when clear button is clicked', () => {
+    render(
+      <FluentProvider theme={webLightTheme}>
+        <PathSelector
+          label="Test Path"
+          value="C:\\test\\path.exe"
+          onChange={mockOnChange}
+          showClearButton={true}
+        />
+      </FluentProvider>
+    );
+
+    const clearButton = screen.getByTitle('Clear path');
+    fireEvent.click(clearButton);
+
+    expect(mockOnChange).toHaveBeenCalledWith('');
+  });
+
+  it('should render open button when showOpenButton is true and path is valid', async () => {
+    mockOnValidate.mockResolvedValue({
+      isValid: true,
+      message: 'Valid path',
+    });
+
+    render(
+      <FluentProvider theme={webLightTheme}>
+        <PathSelector
+          label="Test Path"
+          value="C:\\test\\path.exe"
+          onChange={mockOnChange}
+          onValidate={mockOnValidate}
+          showOpenButton={true}
+        />
+      </FluentProvider>
+    );
+
+    await waitFor(
+      () => {
+        const openButton = screen.getByTitle('Open in file explorer');
+        expect(openButton).toBeInTheDocument();
+      },
+      { timeout: 1000 }
+    );
+  });
+
+  it('should use correct placeholder for directory type', () => {
+    render(
+      <FluentProvider theme={webLightTheme}>
+        <PathSelector label="Test Path" value="" onChange={mockOnChange} type="directory" />
+      </FluentProvider>
+    );
+
+    expect(screen.getByPlaceholderText('Click Browse to select folder')).toBeInTheDocument();
+  });
+
+  it('should use correct placeholder for file type', () => {
+    render(
+      <FluentProvider theme={webLightTheme}>
+        <PathSelector label="Test Path" value="" onChange={mockOnChange} type="file" />
+      </FluentProvider>
+    );
+
+    expect(screen.getByPlaceholderText('Click Browse to select file')).toBeInTheDocument();
+  });
+
+  it('should use custom placeholder when provided', () => {
+    render(
+      <FluentProvider theme={webLightTheme}>
+        <PathSelector
+          label="Test Path"
+          value=""
+          onChange={mockOnChange}
+          placeholder="Custom placeholder"
+        />
+      </FluentProvider>
+    );
+
+    expect(screen.getByPlaceholderText('Custom placeholder')).toBeInTheDocument();
+  });
+
+  it('should accept custom accept attribute', () => {
+    render(
+      <FluentProvider theme={webLightTheme}>
+        <PathSelector
+          label="Test Path"
+          value=""
+          onChange={mockOnChange}
+          type="file"
+          accept=".wav,.mp3"
+        />
+      </FluentProvider>
+    );
+
+    expect(screen.getByText('Browse...')).toBeInTheDocument();
+  });
 });

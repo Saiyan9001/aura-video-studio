@@ -13,6 +13,9 @@ import {
   Dismiss24Filled,
   Info24Regular,
   ArrowClockwise24Regular,
+  Dismiss24Regular,
+  FolderOpen24Regular,
+  Document24Regular,
 } from '@fluentui/react-icons';
 import { useState, useCallback, useEffect } from 'react';
 import type { FC } from 'react';
@@ -57,6 +60,8 @@ const useStyles = makeStyles({
   },
 });
 
+export type PathSelectorType = 'file' | 'directory';
+
 export interface PathSelectorProps {
   label: string;
   placeholder?: string;
@@ -69,11 +74,15 @@ export interface PathSelectorProps {
   dependencyId?: string;
   disabled?: boolean;
   autoDetect?: () => Promise<string | null>;
+  type?: PathSelectorType;
+  accept?: string;
+  showClearButton?: boolean;
+  showOpenButton?: boolean;
 }
 
 export const PathSelector: FC<PathSelectorProps> = ({
   label,
-  placeholder = 'Click Browse to select file',
+  placeholder,
   value,
   onChange,
   onValidate,
@@ -81,6 +90,10 @@ export const PathSelector: FC<PathSelectorProps> = ({
   defaultPath,
   disabled = false,
   autoDetect,
+  type = 'file',
+  accept = '.exe',
+  showClearButton = true,
+  showOpenButton = false,
 }) => {
   const styles = useStyles();
   const [isValidating, setIsValidating] = useState(false);
@@ -90,6 +103,10 @@ export const PathSelector: FC<PathSelectorProps> = ({
     message: string;
     version?: string;
   } | null>(null);
+
+  const effectivePlaceholder =
+    placeholder ||
+    (type === 'directory' ? 'Click Browse to select folder' : 'Click Browse to select file');
 
   const handleValidate = useCallback(
     async (pathToValidate: string) => {
@@ -130,7 +147,13 @@ export const PathSelector: FC<PathSelectorProps> = ({
   const handleBrowse = useCallback(() => {
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = '.exe';
+
+    if (type === 'directory') {
+      input.setAttribute('webkitdirectory', '');
+      input.setAttribute('directory', '');
+    } else {
+      input.accept = accept;
+    }
 
     input.onchange = (e) => {
       const target = e.target as HTMLInputElement;
@@ -139,6 +162,9 @@ export const PathSelector: FC<PathSelectorProps> = ({
         const path = (file as unknown as { path?: string }).path;
         if (path) {
           onChange(path);
+        } else if (file.webkitRelativePath && type === 'directory') {
+          const folderPath = file.webkitRelativePath.split('/')[0];
+          onChange(folderPath);
         } else if (file.name) {
           onChange(file.name);
         }
@@ -146,7 +172,18 @@ export const PathSelector: FC<PathSelectorProps> = ({
     };
 
     input.click();
+  }, [onChange, type, accept]);
+
+  const handleClear = useCallback(() => {
+    onChange('');
+    setValidationResult(null);
   }, [onChange]);
+
+  const handleOpenInExplorer = useCallback(() => {
+    if (!value) return;
+
+    window.open(`file://${value}`, '_blank');
+  }, [value]);
 
   const handleAutoDetect = useCallback(async () => {
     if (!autoDetect) return;
@@ -180,26 +217,46 @@ export const PathSelector: FC<PathSelectorProps> = ({
       <div className={styles.inputRow}>
         <Input
           className={styles.input}
-          placeholder={placeholder}
+          placeholder={effectivePlaceholder}
           value={value}
           onChange={(e) => onChange(e.target.value)}
           disabled={disabled || isValidating}
-          contentBefore={<Folder24Regular />}
+          contentBefore={type === 'directory' ? <Folder24Regular /> : <Document24Regular />}
         />
         <Button
           appearance="secondary"
           onClick={handleBrowse}
           disabled={disabled || isValidating}
-          icon={<Folder24Regular />}
+          icon={type === 'directory' ? <Folder24Regular /> : <Document24Regular />}
+          title={type === 'directory' ? 'Browse for folder' : 'Browse for file'}
         >
           Browse...
         </Button>
+        {showClearButton && value && (
+          <Button
+            appearance="subtle"
+            onClick={handleClear}
+            disabled={disabled || isValidating}
+            icon={<Dismiss24Regular />}
+            title="Clear path"
+          />
+        )}
+        {showOpenButton && value && validationResult?.isValid && (
+          <Button
+            appearance="subtle"
+            onClick={handleOpenInExplorer}
+            disabled={disabled}
+            icon={<FolderOpen24Regular />}
+            title="Open in file explorer"
+          />
+        )}
         {autoDetect && (
           <Button
             appearance="secondary"
             onClick={handleAutoDetect}
             disabled={disabled || isAutoDetecting}
             icon={isAutoDetecting ? <Spinner size="tiny" /> : <ArrowClockwise24Regular />}
+            title="Automatically detect installation"
           >
             {isAutoDetecting ? 'Detecting...' : 'Auto-Detect'}
           </Button>

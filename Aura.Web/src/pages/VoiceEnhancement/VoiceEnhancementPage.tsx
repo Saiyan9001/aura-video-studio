@@ -11,7 +11,6 @@ import {
   Tab,
   TabList,
   Field,
-  Input,
   Textarea,
   Slider,
   Dropdown,
@@ -25,6 +24,7 @@ import {
   MicSparkle24Regular,
 } from '@fluentui/react-icons';
 import { useState, useCallback } from 'react';
+import { PathSelector } from '../../components/common/PathSelector';
 import { ErrorState } from '../../components/Loading';
 
 const useStyles = makeStyles({
@@ -292,13 +292,17 @@ const VoiceEnhancementPage: React.FC = () => {
               <Title2>Voice Enhancement</Title2>
             </div>
             <div className={styles.form}>
-              <Field label="Audio File Path" required>
-                <Input
-                  value={inputPath}
-                  onChange={(_, data) => setInputPath(data.value)}
-                  placeholder="/path/to/audio.wav"
-                />
-              </Field>
+              <PathSelector
+                label="Audio File Path"
+                placeholder="Select audio file to enhance"
+                value={inputPath}
+                onChange={setInputPath}
+                type="file"
+                accept=".wav,.mp3,.m4a,.flac,.ogg"
+                helpText="Select the audio file you want to enhance (WAV, MP3, M4A, FLAC, or OGG format)"
+                showClearButton={true}
+                showOpenButton={false}
+              />
               <Field>
                 <Checkbox
                   label="Enable Noise Reduction"
@@ -372,13 +376,17 @@ const VoiceEnhancementPage: React.FC = () => {
               <Title2>Audio Quality Analysis</Title2>
             </div>
             <div className={styles.form}>
-              <Field label="Audio File Path" required>
-                <Input
-                  value={analyzeInputPath}
-                  onChange={(_, data) => setAnalyzeInputPath(data.value)}
-                  placeholder="/path/to/audio.wav"
-                />
-              </Field>
+              <PathSelector
+                label="Audio File Path"
+                placeholder="Select audio file to analyze"
+                value={analyzeInputPath}
+                onChange={setAnalyzeInputPath}
+                type="file"
+                accept=".wav,.mp3,.m4a,.flac,.ogg"
+                helpText="Select the audio file to analyze quality metrics"
+                showClearButton={true}
+                showOpenButton={false}
+              />
               <div className={styles.actions}>
                 <Button
                   appearance="primary"
@@ -407,13 +415,17 @@ const VoiceEnhancementPage: React.FC = () => {
               <Title2>Emotion Detection</Title2>
             </div>
             <div className={styles.form}>
-              <Field label="Audio File Path" required>
-                <Input
-                  value={emotionAudioPath}
-                  onChange={(_, data) => setEmotionAudioPath(data.value)}
-                  placeholder="/path/to/audio.wav"
-                />
-              </Field>
+              <PathSelector
+                label="Audio File Path"
+                placeholder="Select audio file for emotion detection"
+                value={emotionAudioPath}
+                onChange={setEmotionAudioPath}
+                type="file"
+                accept=".wav,.mp3,.m4a,.flac,.ogg"
+                helpText="Select the audio file to detect emotion from voice"
+                showClearButton={true}
+                showOpenButton={false}
+              />
               <div className={styles.actions}>
                 <Button
                   appearance="primary"
