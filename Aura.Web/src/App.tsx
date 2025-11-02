@@ -29,7 +29,6 @@ import { IdeationDashboard } from './pages/Ideation/IdeationDashboard';
 import { TrendingTopicsExplorer } from './pages/Ideation/TrendingTopicsExplorer';
 import LearningPage from './pages/Learning/LearningPage';
 import { TranslationPage } from './pages/Localization/TranslationPage';
-import { ModelsManagementPage } from './pages/Models/ModelsManagementPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { FirstRunWizard } from './pages/Onboarding/FirstRunWizard';
 import { PacingAnalyzerPage } from './pages/PacingAnalyzerPage';
@@ -436,7 +435,6 @@ function App() {
                     <Route path="/health/providers" element={<ProviderHealthDashboard />} />
                     <Route path="/ai-editing" element={<AIEditingPage />} />
                     <Route path="/aesthetics" element={<AestheticsPage />} />
-                    <Route path="/models" element={<ModelsManagementPage />} />
                     <Route path="/localization" element={<TranslationPage />} />
                     <Route path="/prompt-management" element={<PromptManagementPage />} />
                     <Route path="/voice-enhancement" element={<VoiceEnhancementPage />} />

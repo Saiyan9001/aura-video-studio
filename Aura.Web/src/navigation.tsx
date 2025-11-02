@@ -20,7 +20,6 @@ import {
   AppGeneric24Regular,
   Wand24Regular,
   Eye24Regular,
-  Database24Regular,
   LocalLanguage24Regular,
   DocumentText24Regular,
   Speaker224Regular,
@@ -67,7 +66,6 @@ export const navItems: NavItem[] = [
   { key: 'health', name: 'Provider Health', icon: HeartPulse24Regular, path: '/health' },
   { key: 'ai-editing', name: 'AI Editing', icon: Wand24Regular, path: '/ai-editing' },
   { key: 'aesthetics', name: 'Visual Aesthetics', icon: Eye24Regular, path: '/aesthetics' },
-  { key: 'models', name: 'AI Models', icon: Database24Regular, path: '/models' },
   {
     key: 'localization',
     name: 'Localization',

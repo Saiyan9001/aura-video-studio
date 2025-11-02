@@ -15,6 +15,7 @@ import {
 } from '@fluentui/react-components';
 import { Save24Regular, ArrowDownload24Regular, ArrowUpload24Regular } from '@fluentui/react-icons';
 import { useState, useEffect } from 'react';
+import { AIModelsTab } from '../components/Settings/AIModelsTab';
 import { AIOptimizationPanel } from '../components/Settings/AIOptimizationPanel';
 import { ApiKeysSettingsTab } from '../components/Settings/ApiKeysSettingsTab';
 import { ContentSafetyTab } from '../components/Settings/ContentSafetyTab';
@@ -680,6 +681,7 @@ export function SettingsPage() {
         <Tab value="providers">Providers</Tab>
         <Tab value="localproviders">Local Providers</Tab>
         <Tab value="localengines">Local Engines</Tab>
+        <Tab value="aimodels">AI Models</Tab>
         <Tab value="aioptimization">AI Optimization</Tab>
         <Tab value="importexport">Import/Export</Tab>
         <Tab value="privacy">Privacy</Tab>
@@ -1452,6 +1454,8 @@ export function SettingsPage() {
           <RescanPanel />
         </>
       )}
+
+      {activeTab === 'aimodels' && <AIModelsTab />}
 
       {activeTab === 'aioptimization' && <AIOptimizationPanel />}
 
