@@ -1,4 +1,3 @@
-import React, { useState, useEffect } from 'react';
 import { Text, Button, Spinner } from '@fluentui/react-components';
 import {
   Checkmark24Regular,
@@ -6,6 +5,7 @@ import {
   Warning24Regular,
   Save24Regular,
 } from '@fluentui/react-icons';
+import React, { useState, useEffect } from 'react';
 
 export type SaveStatus = 'saved' | 'saving' | 'error' | 'idle';
 
@@ -91,17 +91,15 @@ export const AutoSaveIndicator: React.FC<AutoSaveIndicatorProps> = ({
           status === 'error'
             ? 'var(--colorPaletteRedBackground2)'
             : status === 'saved'
-            ? 'var(--colorNeutralBackground1)'
-            : 'var(--colorNeutralBackground2)',
+              ? 'var(--colorNeutralBackground1)'
+              : 'var(--colorNeutralBackground2)',
         border: `1px solid ${
-          status === 'error'
-            ? 'var(--colorPaletteRedBorder1)'
-            : 'var(--colorNeutralStroke2)'
+          status === 'error' ? 'var(--colorPaletteRedBorder1)' : 'var(--colorNeutralStroke2)'
         }`,
       }}
     >
       {renderStatusIcon()}
-      
+
       <Text size={200} style={{ whiteSpace: 'nowrap' }}>
         {renderStatusText()}
       </Text>

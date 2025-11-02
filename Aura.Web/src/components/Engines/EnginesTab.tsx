@@ -20,7 +20,7 @@ import {
 import { useEffect, useState } from 'react';
 import { useEnginesStore } from '../../state/engines';
 import { EngineCard } from './EngineCard';
-import { FFmpegCard } from './FFmpegCard';
+import { SafeFFmpegCard } from './SafeFFmpegCard';
 
 const useStyles = makeStyles({
   container: {
@@ -107,10 +107,18 @@ export function EnginesTab() {
     openWebUI,
   } = useEnginesStore();
   const [copiedPath, setCopiedPath] = useState<string | null>(null);
+  const [hasLoadError, setHasLoadError] = useState(false);
 
   useEffect(() => {
-    fetchEngines();
-    fetchInstances();
+    const loadData = async () => {
+      try {
+        await Promise.allSettled([fetchEngines(), fetchInstances()]);
+      } catch (err) {
+        console.error('Error loading engines data:', err);
+        setHasLoadError(true);
+      }
+    };
+    loadData();
   }, [fetchEngines, fetchInstances]);
 
   const copyToClipboard = async (text: string, id: string) => {
@@ -123,7 +131,17 @@ export function EnginesTab() {
     }
   };
 
-  if (isLoading && engines.length === 0) {
+  const handleRetry = async () => {
+    setHasLoadError(false);
+    try {
+      await Promise.allSettled([fetchEngines(), fetchInstances()]);
+    } catch (err) {
+      console.error('Error retrying engines data load:', err);
+      setHasLoadError(true);
+    }
+  };
+
+  if (isLoading && engines.length === 0 && instances.length === 0 && !hasLoadError) {
     return (
       <div className={styles.loadingContainer}>
         <Spinner label="Loading engines..." />
@@ -143,9 +161,18 @@ export function EnginesTab() {
         </Text>
       </div>
 
-      {error && (
+      {(error || hasLoadError) && (
         <MessageBar intent="error">
-          <MessageBarBody>{error}</MessageBarBody>
+          <MessageBarBody>
+            {error || 'Failed to load engines data. The backend may not be running.'}
+            <Button
+              appearance="transparent"
+              onClick={handleRetry}
+              style={{ marginLeft: tokens.spacingHorizontalM }}
+            >
+              Retry
+            </Button>
+          </MessageBarBody>
         </MessageBar>
       )}
 
@@ -289,7 +316,7 @@ export function EnginesTab() {
       </div>
 
       {/* FFmpeg - Special Card */}
-      <FFmpegCard />
+      <SafeFFmpegCard />
 
       {engines.length === 0 && !isLoading ? (
         <div className={styles.emptyState}>

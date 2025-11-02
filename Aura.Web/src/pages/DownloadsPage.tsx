@@ -26,6 +26,7 @@ import {
 } from '@fluentui/react-icons';
 import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { DependenciesEmptyState } from '../components/Engines/DependenciesEmptyState';
 import { EnginesTab } from '../components/Engines/EnginesTab';
 import { TroubleshootingPanel } from '../components/Engines/TroubleshootingPanel';
 import { useNotifications } from '../components/Notifications/Toasts';
@@ -112,6 +113,8 @@ export function DownloadsPage() {
   const [loading, setLoading] = useState(true);
   const [componentStatus, setComponentStatus] = useState<ComponentStatus>({});
   const [selectedTab, setSelectedTab] = useState<string>('dependencies');
+  const [isBackendDown, setIsBackendDown] = useState(false);
+  const [hasManifestError, setHasManifestError] = useState(false);
 
   const onTabSelect = (_: SelectTabEvent, data: SelectTabData) => {
     setSelectedTab(data.value as string);
@@ -198,6 +201,8 @@ export function DownloadsPage() {
   );
 
   const fetchManifest = useCallback(async () => {
+    setHasManifestError(false);
+    setIsBackendDown(false);
     try {
       const response = await fetch(apiUrl('/api/downloads/manifest'));
       if (response.ok) {
@@ -208,6 +213,7 @@ export function DownloadsPage() {
           data.map((component: DependencyComponent) => checkComponentStatus(component.name))
         );
       } else {
+        setHasManifestError(true);
         showFailureToast({
           title: 'Failed to Load Manifest',
           message: `Server returned HTTP ${response.status} error. The manifest endpoint may not be available.`,
@@ -215,9 +221,11 @@ export function DownloadsPage() {
       }
     } catch (error) {
       console.error('Error loading manifest:', error);
+      setIsBackendDown(true);
+      setHasManifestError(true);
       showFailureToast({
         title: 'Error Loading Manifest',
-        message: error instanceof Error ? error.message : 'Unknown error occurred',
+        message: error instanceof Error ? error.message : 'Backend may not be running',
       });
     } finally {
       setLoading(false);
@@ -596,6 +604,8 @@ export function DownloadsPage() {
             <Card className={styles.card}>
               <Spinner label="Loading dependencies..." />
             </Card>
+          ) : hasManifestError || manifest.length === 0 ? (
+            <DependenciesEmptyState onRetry={fetchManifest} isBackendDown={isBackendDown} />
           ) : (
             <Card className={styles.card}>
               <Title2>Available Components</Title2>
