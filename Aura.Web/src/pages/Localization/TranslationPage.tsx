@@ -18,6 +18,9 @@ import {
   Dropdown,
   Option,
   Textarea,
+  MessageBar,
+  MessageBarBody,
+  MessageBarTitle,
 } from '@fluentui/react-components';
 import {
   LocalLanguage24Regular,
@@ -28,6 +31,7 @@ import {
 } from '@fluentui/react-icons';
 import { useState, useCallback, useEffect } from 'react';
 import { ErrorState } from '../../components/Loading';
+import { FALLBACK_LANGUAGES } from '../../constants/fallbackLanguages';
 import {
   translateScript,
   batchTranslate,
@@ -116,6 +120,9 @@ const useStyles = makeStyles({
     color: tokens.colorNeutralForeground3,
     fontStyle: 'italic',
   },
+  warningBanner: {
+    marginBottom: tokens.spacingVerticalL,
+  },
 });
 
 type TabValue = 'translate' | 'batch' | 'glossary';
@@ -142,6 +149,7 @@ export const TranslationPage: React.FC = () => {
   // Languages
   const [languages, setLanguages] = useState<LanguageInfoDto[]>([]);
   const [loadingLanguages, setLoadingLanguages] = useState(true);
+  const [usingFallbackLanguages, setUsingFallbackLanguages] = useState(false);
 
   // Load supported languages on mount
   useEffect(() => {
@@ -149,9 +157,14 @@ export const TranslationPage: React.FC = () => {
       try {
         const langs = await getSupportedLanguages();
         setLanguages(langs);
+        setUsingFallbackLanguages(false);
       } catch (err) {
-        console.error('Failed to load languages:', err);
-        setError('Failed to load supported languages');
+        console.error('Failed to load languages from backend:', err);
+
+        // Use fallback languages instead of showing error
+        console.info('Using fallback language list (30 common languages)');
+        setLanguages(FALLBACK_LANGUAGES as never[]);
+        setUsingFallbackLanguages(true);
       } finally {
         setLoadingLanguages(false);
       }
@@ -257,7 +270,7 @@ export const TranslationPage: React.FC = () => {
         <div>
           <Title1>Translation & Localization</Title1>
           <Text className={styles.subtitle}>
-            AI-powered translation with cultural adaptation for 55+ languages
+            AI-powered translation with cultural adaptation for {languages.length}+ languages
           </Text>
         </div>
       </div>
@@ -277,6 +290,17 @@ export const TranslationPage: React.FC = () => {
           Glossary Management
         </Tab>
       </TabList>
+
+      {usingFallbackLanguages && (
+        <MessageBar intent="warning" className={styles.warningBanner}>
+          <MessageBarBody>
+            <MessageBarTitle>Using Offline Language List</MessageBarTitle>
+            Unable to connect to backend. Showing 30 common languages. Full feature set
+            (translation, cultural adaptation) requires backend connection. Check that the API
+            server is running.
+          </MessageBarBody>
+        </MessageBar>
+      )}
 
       {error && <ErrorState message={error} />}
 

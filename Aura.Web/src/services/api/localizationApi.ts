@@ -3,6 +3,7 @@
  * Provides methods for script translation, cultural adaptation, and glossary management
  */
 
+import { getCachedLanguages, cacheLanguages } from '../../constants/fallbackLanguages';
 import type {
   TranslateScriptRequest,
   TranslationResultDto,
@@ -58,11 +59,32 @@ export async function analyzeCulturalContent(
 }
 
 /**
- * Get list of all supported languages
+ * Get list of all supported languages with caching and fallback
+ * Returns cached languages if API is unavailable
  */
 export async function getSupportedLanguages(): Promise<LanguageInfoDto[]> {
-  const response = await apiClient.get<LanguageInfoDto[]>('/api/localization/languages');
-  return response.data;
+  try {
+    const response = await apiClient.get<LanguageInfoDto[]>('/api/localization/languages');
+
+    // Cache the successfully loaded languages
+    if (response.data && response.data.length > 0) {
+      cacheLanguages(response.data as never[]);
+    }
+
+    return response.data;
+  } catch (error) {
+    console.warn('Failed to load languages from API, trying cache:', error);
+
+    // Try to use cached languages
+    const cached = getCachedLanguages();
+    if (cached && cached.length > 0) {
+      console.info('Using cached languages');
+      return cached as never[];
+    }
+
+    // If no cache, throw error to trigger fallback in calling code
+    throw error;
+  }
 }
 
 /**
