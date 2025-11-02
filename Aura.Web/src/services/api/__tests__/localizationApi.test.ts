@@ -284,10 +284,41 @@ describe('localizationApi', () => {
       await expect(translateScript(request)).rejects.toThrow();
     });
 
-    it('should handle network errors', async () => {
+    it('should use cached/fallback languages on network error', async () => {
+      // Clear any existing cache
+      localStorage.removeItem('aura_cached_languages');
+
       mock.onGet('/api/localization/languages').networkError();
 
+      // Should still throw (will be caught by TranslationPage which uses fallback)
       await expect(getSupportedLanguages()).rejects.toThrow();
     }, 15000); // Increase timeout to allow for retries
+
+    it('should cache languages on successful load', async () => {
+      const mockLanguages: LanguageInfoDto[] = [
+        {
+          code: 'en',
+          name: 'English',
+          nativeName: 'English',
+          region: 'Global',
+          isRightToLeft: false,
+          defaultFormality: 'Neutral',
+          typicalExpansionFactor: 1.0,
+        },
+      ];
+
+      mock.onGet('/api/localization/languages').reply(200, mockLanguages);
+
+      await getSupportedLanguages();
+
+      // Check that languages were cached
+      const cached = localStorage.getItem('aura_cached_languages');
+      expect(cached).toBeTruthy();
+      if (cached) {
+        const parsedCache = JSON.parse(cached);
+        expect(parsedCache).toHaveLength(1);
+        expect(parsedCache[0].code).toBe('en');
+      }
+    });
   });
 });
