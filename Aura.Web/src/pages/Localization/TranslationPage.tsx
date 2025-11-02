@@ -163,7 +163,7 @@ export const TranslationPage: React.FC = () => {
 
         // Use fallback languages instead of showing error
         console.info('Using fallback language list (30 common languages)');
-        setLanguages(FALLBACK_LANGUAGES as never[]);
+        setLanguages(FALLBACK_LANGUAGES);
         setUsingFallbackLanguages(true);
       } finally {
         setLoadingLanguages(false);

@@ -68,7 +68,7 @@ export async function getSupportedLanguages(): Promise<LanguageInfoDto[]> {
 
     // Cache the successfully loaded languages
     if (response.data && response.data.length > 0) {
-      cacheLanguages(response.data as never[]);
+      cacheLanguages(response.data);
     }
 
     return response.data;
@@ -79,7 +79,7 @@ export async function getSupportedLanguages(): Promise<LanguageInfoDto[]> {
     const cached = getCachedLanguages();
     if (cached && cached.length > 0) {
       console.info('Using cached languages');
-      return cached as never[];
+      return cached;
     }
 
     // If no cache, throw error to trigger fallback in calling code

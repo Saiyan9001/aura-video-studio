@@ -4,20 +4,12 @@
  * Subset of most common languages from LanguageRegistry
  */
 
-export interface FallbackLanguageInfo {
-  code: string;
-  name: string;
-  nativeName: string;
-  region: string;
-  isRightToLeft: boolean;
-  defaultFormality: string;
-  typicalExpansionFactor: number;
-}
+import type { LanguageInfoDto } from '../types/api-v1';
 
 /**
  * Common languages for fallback (top 30 most used globally)
  */
-export const FALLBACK_LANGUAGES: FallbackLanguageInfo[] = [
+export const FALLBACK_LANGUAGES: LanguageInfoDto[] = [
   // English
   {
     code: 'en',
@@ -332,7 +324,7 @@ export const FALLBACK_LANGUAGES: FallbackLanguageInfo[] = [
 /**
  * Get cached languages from localStorage
  */
-export function getCachedLanguages(): FallbackLanguageInfo[] | null {
+export function getCachedLanguages(): LanguageInfoDto[] | null {
   try {
     const cached = localStorage.getItem('aura_cached_languages');
     if (cached) {
@@ -350,7 +342,7 @@ export function getCachedLanguages(): FallbackLanguageInfo[] | null {
 /**
  * Cache languages in localStorage
  */
-export function cacheLanguages(languages: FallbackLanguageInfo[]): void {
+export function cacheLanguages(languages: LanguageInfoDto[]): void {
   try {
     localStorage.setItem('aura_cached_languages', JSON.stringify(languages));
   } catch (error) {
