@@ -14,16 +14,9 @@ import {
   TableRow,
   TableHeader,
   TableHeaderCell,
-  Dialog,
-  DialogSurface,
-  DialogTitle,
-  DialogBody,
-  DialogContent,
-  DialogActions,
 } from '@fluentui/react-components';
 import {
   Database24Regular,
-  Delete20Regular,
   Checkmark20Regular,
   Warning20Regular,
   ArrowSync20Regular,
@@ -104,9 +97,7 @@ export const AIModelsTab: React.FC<AIModelsTabProps> = ({ onModelsChange }) => {
   const [error, setError] = useState<string | null>(null);
   const [ollamaModels, setOllamaModels] = useState<OllamaModel[]>([]);
   const [ollamaUrl, setOllamaUrl] = useState('http://127.0.0.1:11434');
-  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
-  const [modelToDelete, setModelToDelete] = useState<ModelInfo | null>(null);
-  const [isDeleting, setIsDeleting] = useState(false);
+
 
   const loadOllamaModels = useCallback(async () => {
     setLoading(true);
@@ -165,47 +156,6 @@ export const AIModelsTab: React.FC<AIModelsTabProps> = ({ onModelsChange }) => {
 
   const handleRefresh = () => {
     loadOllamaModels();
-  };
-
-  const handleDeleteModel = (model: OllamaModel) => {
-    setModelToDelete({
-      id: model.name,
-      name: model.name,
-      provider: 'Ollama',
-      kind: 'LLM',
-      status: 'available',
-      sizeGB: model.sizeGB,
-    });
-    setShowDeleteDialog(true);
-  };
-
-  const confirmDelete = async () => {
-    if (!modelToDelete) return;
-
-    setIsDeleting(true);
-    try {
-      const response = await fetch(apiUrl('/api/engines/ollama/delete'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: modelToDelete.name,
-          url: ollamaUrl,
-        }),
-      });
-
-      if (response.ok) {
-        await loadOllamaModels();
-        setShowDeleteDialog(false);
-        setModelToDelete(null);
-      } else {
-        const data = await response.json();
-        setError(data.error || 'Failed to delete model');
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete model');
-    } finally {
-      setIsDeleting(false);
-    }
   };
 
   const totalSize = ollamaModels.reduce((sum, m) => sum + (m.sizeGB || 0), 0);
@@ -327,7 +277,7 @@ export const AIModelsTab: React.FC<AIModelsTabProps> = ({ onModelsChange }) => {
                 <TableHeaderCell>Model Name</TableHeaderCell>
                 <TableHeaderCell>Size</TableHeaderCell>
                 <TableHeaderCell>Status</TableHeaderCell>
-                <TableHeaderCell>Actions</TableHeaderCell>
+                <TableHeaderCell>Delete Command</TableHeaderCell>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -345,16 +295,12 @@ export const AIModelsTab: React.FC<AIModelsTabProps> = ({ onModelsChange }) => {
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    <div style={{ display: 'flex', gap: tokens.spacingHorizontalXS }}>
-                      <Button
-                        size="small"
-                        appearance="subtle"
-                        icon={<Delete20Regular />}
-                        onClick={() => handleDeleteModel(model)}
-                      >
-                        Delete
-                      </Button>
-                    </div>
+                    <Text
+                      size={200}
+                      style={{ fontFamily: 'monospace', color: tokens.colorNeutralForeground3 }}
+                    >
+                      ollama rm {model.name}
+                    </Text>
                   </TableCell>
                 </TableRow>
               ))}
@@ -451,47 +397,46 @@ export const AIModelsTab: React.FC<AIModelsTabProps> = ({ onModelsChange }) => {
         </Card>
       </Card>
 
-      {/* Delete confirmation dialog */}
-      <Dialog open={showDeleteDialog} onOpenChange={(_, data) => setShowDeleteDialog(data.open)}>
-        <DialogSurface>
-          <DialogTitle>Delete Model</DialogTitle>
-          <DialogBody>
-            <DialogContent>
-              <Text>
-                Are you sure you want to delete the model <strong>{modelToDelete?.name}</strong>?
-              </Text>
-              <Text size={200} style={{ marginTop: tokens.spacingVerticalS, display: 'block' }}>
-                This will remove the model from your system and free up{' '}
-                {modelToDelete?.sizeGB?.toFixed(2)} GB of storage.
-              </Text>
-              <Text
-                size={200}
-                style={{
-                  marginTop: tokens.spacingVerticalS,
-                  display: 'block',
-                  fontStyle: 'italic',
-                  color: tokens.colorNeutralForeground3,
-                }}
-              >
-                You can reinstall it later by pulling it again with Ollama.
-              </Text>
-            </DialogContent>
-            <DialogActions>
-              <Button appearance="secondary" onClick={() => setShowDeleteDialog(false)}>
-                Cancel
-              </Button>
-              <Button
-                appearance="primary"
-                onClick={confirmDelete}
-                disabled={isDeleting}
-                style={{ backgroundColor: tokens.colorPaletteRedBackground3 }}
-              >
-                {isDeleting ? 'Deleting...' : 'Delete'}
-              </Button>
-            </DialogActions>
-          </DialogBody>
-        </DialogSurface>
-      </Dialog>
+      <Card className={styles.section}>
+        <Title3>Deleting Models</Title3>
+        <Text size={200} className={styles.subtitle}>
+          Remove models using the Ollama CLI
+        </Text>
+
+        <Card className={styles.infoCard} style={{ marginTop: tokens.spacingVerticalM }}>
+          <Text weight="semibold" size={300}>
+            🗑️ How to Delete Models
+          </Text>
+          <div style={{ marginTop: tokens.spacingVerticalS }}>
+            <Text size={200} style={{ display: 'block', marginBottom: tokens.spacingVerticalXS }}>
+              To remove a model from your system, use the Ollama CLI:
+            </Text>
+            <div
+              style={{
+                fontFamily: 'monospace',
+                fontSize: '12px',
+                backgroundColor: tokens.colorNeutralBackground1,
+                padding: tokens.spacingVerticalS,
+                borderRadius: tokens.borderRadiusSmall,
+                marginTop: tokens.spacingVerticalXS,
+              }}
+            >
+              ollama rm &lt;model-name&gt;
+            </div>
+            <Text
+              size={200}
+              style={{
+                marginTop: tokens.spacingVerticalS,
+                display: 'block',
+                fontStyle: 'italic',
+                color: tokens.colorNeutralForeground3,
+              }}
+            >
+              Example: To delete llama3.1:8b-q4_k_m, run: ollama rm llama3.1:8b-q4_k_m
+            </Text>
+          </div>
+        </Card>
+      </Card>
     </div>
   );
 };
