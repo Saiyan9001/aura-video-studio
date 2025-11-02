@@ -207,11 +207,15 @@ export function DownloadsPage() {
       const response = await fetch(apiUrl('/api/downloads/manifest'));
       if (response.ok) {
         const data = await response.json();
-        setManifest(data);
+        const components = data.components || data.Components || [];
+        setManifest(Array.isArray(components) ? components : []);
+        
         // Check status for each component in parallel
-        await Promise.all(
-          data.map((component: DependencyComponent) => checkComponentStatus(component.name))
-        );
+        if (Array.isArray(components) && components.length > 0) {
+          await Promise.all(
+            components.map((component: DependencyComponent) => checkComponentStatus(component.name))
+          );
+        }
       } else {
         setHasManifestError(true);
         showFailureToast({
