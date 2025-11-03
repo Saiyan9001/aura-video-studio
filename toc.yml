@@ -58,6 +58,22 @@
 - name: Best Practices
   href: docs/best-practices/README.md
 - name: Architecture
-  href: ARCHITECTURE.md
+  href: docs/architecture/ARCHITECTURE.md
+  items:
+  - name: Overview
+    href: docs/architecture/ARCHITECTURE.md
+  - name: Provider Selection
+    href: docs/architecture/PROVIDER_SELECTION_ARCHITECTURE.md
+  - name: SSE Event Flow
+    href: docs/architecture/SSE_EVENT_FLOW.md
+- name: Documentation
+  href: docs/DocsIndex.md
+  items:
+  - name: Documentation Index
+    href: docs/DocsIndex.md
+  - name: Style Guide
+    href: docs/style/DocsStyleGuide.md
+  - name: Audit Report
+    href: docs/Documentation_Audit_Report.md
 - name: Contributing
   href: CONTRIBUTING.md

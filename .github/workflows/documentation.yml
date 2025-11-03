@@ -47,14 +47,26 @@ jobs:
     - name: Build documentation
       run: docfx docfx.json
       continue-on-error: true
+    
+    - name: Lint markdown files
+      uses: DavidAnson/markdownlint-cli2-action@v16
+      with:
+        globs: |
+          **/*.md
+          !node_modules/**
+          !**/node_modules/**
+        config: .markdownlint.json
+      continue-on-error: true
       
     - name: Check for broken links
       run: |
         echo "Checking for broken links in documentation..."
         # Install markdown-link-check
         npm install -g markdown-link-check
-        # Check all markdown files
-        find docs -name "*.md" -exec markdown-link-check {} \; || true
+        # Check all markdown files with config
+        find docs -name "*.md" -exec markdown-link-check --config .markdown-link-check.json {} \; || true
+        # Check root markdown files
+        find . -maxdepth 1 -name "*.md" -exec markdown-link-check --config .markdown-link-check.json {} \; || true
       
     - name: Spell check
       uses: rojopolis/spellcheck-github-actions@0.35.0
