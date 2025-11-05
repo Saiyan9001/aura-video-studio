@@ -2156,3 +2156,106 @@ public record RagConfigurationDto(
     bool IncludeCitations = true,
     bool TightenClaims = false);
 
+/// <summary>
+/// Request for translation workflow with SSML generation
+/// </summary>
+public record TranslationWorkflowRequest(
+    string SourceLanguage,
+    string TargetLanguage,
+    string SourceText,
+    List<ScriptLineDto>? ScriptLines,
+    string TargetTtsProvider,
+    VoiceSpecDto TargetVoiceSpec,
+    CulturalContextDto? CulturalContext,
+    TranslationOptionsDto? Options,
+    Dictionary<string, string>? Glossary);
+
+/// <summary>
+/// Result of translation workflow with SSML
+/// </summary>
+public record TranslationWorkflowResultDto(
+    bool Success,
+    string? Error,
+    TranslationResultDto? Translation,
+    SSMLPlanResultDto? SSMLPlan,
+    string SrtContent,
+    string VttContent,
+    List<string> ValidationWarnings,
+    double TotalDurationSeconds);
+
+/// <summary>
+/// Request for subtitle export
+/// </summary>
+public record SubtitleExportRequest(
+    List<TranslatedScriptLineDto> TranslatedLines,
+    string Format,
+    SubtitleStyleDto? Style);
+
+/// <summary>
+/// Result of subtitle export
+/// </summary>
+public record SubtitleExportResultDto(
+    string Content,
+    string Format,
+    int LineCount,
+    bool IsValid,
+    string? ValidationMessage,
+    SubtitleStyleDto? Style);
+
+/// <summary>
+/// Subtitle style configuration for RTL and font fallback
+/// </summary>
+public record SubtitleStyleDto(
+    string PrimaryFont = "Arial",
+    List<string>? FallbackFonts = null,
+    int FontSize = 24,
+    string TextColor = "FFFFFF",
+    string BackgroundColor = "000000",
+    int BackgroundOpacity = 128,
+    bool EnableRTL = false,
+    string Alignment = "center",
+    int OutlineWidth = 2,
+    string OutlineColor = "000000");
+
+/// <summary>
+/// Request to check TTS provider language support
+/// </summary>
+public record ProviderLanguageSupportRequest(
+    string ProviderName,
+    string LanguageCode);
+
+/// <summary>
+/// Response for provider language support check
+/// </summary>
+public record ProviderLanguageSupportResponse(
+    string ProviderName,
+    string LanguageCode,
+    bool IsSupported,
+    List<string>? SuggestedAlternatives);
+
+/// <summary>
+/// Font configuration for multilingual support
+/// </summary>
+public record FontConfigurationDto(
+    string PrimaryFont,
+    List<string> FallbackFonts,
+    Dictionary<string, string> ScriptSpecificFonts,
+    bool AutoDetectScript = true);
+
+/// <summary>
+/// Request for font recommendations based on language
+/// </summary>
+public record FontRecommendationRequest(
+    string LanguageCode,
+    string? TargetPlatform);
+
+/// <summary>
+/// Font recommendation response
+/// </summary>
+public record FontRecommendationResponse(
+    string LanguageCode,
+    string RecommendedPrimaryFont,
+    List<string> RecommendedFallbacks,
+    bool RequiresSpecialHandling,
+    string? Notes);
+
