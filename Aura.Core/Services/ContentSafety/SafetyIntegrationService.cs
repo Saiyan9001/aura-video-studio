@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Aura.Core.Models.ContentSafety;
@@ -13,6 +15,7 @@ public class SafetyIntegrationService
 {
     private readonly ILogger<SafetyIntegrationService> _logger;
     private readonly ContentSafetyService _safetyService;
+    private readonly List<SafetyAuditLog> _auditLogs = new();
 
     public SafetyIntegrationService(
         ILogger<SafetyIntegrationService> logger,
