@@ -9,6 +9,7 @@ using Aura.Core.AI.Adapters;
 using Aura.Core.Hardware;
 using Aura.Core.Models;
 using Aura.Core.Models.Diagnostics;
+using Aura.Core.Orchestrator;
 using Aura.Core.Providers;
 using Aura.Core.Services.HealthChecks;
 using Aura.Core.Services.Orchestration;
@@ -30,7 +31,8 @@ public class DiagnosticsController : ControllerBase
     private readonly SystemHealthService? _healthService;
     private readonly SystemIntegrityValidator? _integrityValidator;
     private readonly PromptTemplateValidator? _promptValidator;
-    private readonly IEnumerable<ILlmProvider>? _llmProviders;
+    private readonly LlmProviderFactory? _llmProviderFactory;
+    private readonly ILoggerFactory? _loggerFactory;
     private readonly IntelligentContentAdvisor? _contentAdvisor;
     private readonly IHardwareDetector? _hardwareDetector;
     private readonly PipelineHealthCheck? _pipelineHealthCheck;
@@ -47,7 +49,8 @@ public class DiagnosticsController : ControllerBase
         SystemHealthService? healthService = null,
         SystemIntegrityValidator? integrityValidator = null,
         PromptTemplateValidator? promptValidator = null,
-        IEnumerable<ILlmProvider>? llmProviders = null,
+        LlmProviderFactory? llmProviderFactory = null,
+        ILoggerFactory? loggerFactory = null,
         IntelligentContentAdvisor? contentAdvisor = null,
         IHardwareDetector? hardwareDetector = null,
         PipelineHealthCheck? pipelineHealthCheck = null,
@@ -63,7 +66,8 @@ public class DiagnosticsController : ControllerBase
         _healthService = healthService;
         _integrityValidator = integrityValidator;
         _promptValidator = promptValidator;
-        _llmProviders = llmProviders;
+        _llmProviderFactory = llmProviderFactory;
+        _loggerFactory = loggerFactory;
         _contentAdvisor = contentAdvisor;
         _hardwareDetector = hardwareDetector;
         _pipelineHealthCheck = pipelineHealthCheck;
@@ -123,15 +127,13 @@ public class DiagnosticsController : ControllerBase
         var sanitizedProviderName = request.ProviderName?.Replace("\n", "").Replace("\r", "") ?? "null";
         _logger.LogInformation("Provider test requested: {Provider}", sanitizedProviderName);
 
-        if (_llmProviders == null || !_llmProviders.Any())
+        var providers = GetAvailableLlmProviders();
+        if (providers.Count == 0)
         {
             return BadRequest(new { Error = "No LLM providers configured" });
         }
 
-        var provider = _llmProviders.FirstOrDefault(p => 
-            p.GetType().Name.Contains(request.ProviderName, StringComparison.OrdinalIgnoreCase));
-
-        if (provider == null)
+        if (!TryResolveLlmProvider(request.ProviderName, providers, out var resolvedKey, out var provider))
         {
             return NotFound(new { Error = $"Provider '{request.ProviderName}' not found" });
         }
@@ -163,7 +165,8 @@ public class DiagnosticsController : ControllerBase
 
             return Ok(new
             {
-                Provider = provider.GetType().Name,
+                Provider = resolvedKey,
+                Implementation = provider.GetType().Name,
                 Status = "Success",
                 ResponseLength = response?.Length ?? 0,
                 Duration = duration.TotalMilliseconds,
@@ -174,7 +177,7 @@ public class DiagnosticsController : ControllerBase
         {
             return StatusCode(408, new
             {
-                Provider = provider.GetType().Name,
+                Provider = resolvedKey,
                 Status = "Timeout",
                 Error = "Provider test timed out after 30 seconds"
             });
@@ -184,7 +187,7 @@ public class DiagnosticsController : ControllerBase
             _logger.LogError(ex, "Provider test failed: {Provider}", sanitizedProviderName);
             return StatusCode(500, new
             {
-                Provider = provider.GetType().Name,
+                Provider = resolvedKey,
                 Status = "Failed",
                 Error = ex.Message
             });
@@ -248,14 +251,16 @@ public class DiagnosticsController : ControllerBase
     {
         _logger.LogInformation("Configuration check requested");
 
+        var llmProviders = GetAvailableLlmProviders();
+
         var config = new
         {
             HealthServiceConfigured = _healthService != null,
             IntegrityValidatorConfigured = _integrityValidator != null,
             PromptValidatorConfigured = _promptValidator != null,
             ContentAdvisorConfigured = _contentAdvisor != null,
-            LlmProvidersCount = _llmProviders?.Count() ?? 0,
-            LlmProviders = _llmProviders?.Select(p => p.GetType().Name).ToList() ?? new List<string>(),
+            LlmProvidersCount = llmProviders.Count,
+            LlmProviders = llmProviders.Keys.ToList(),
             Timestamp = DateTime.UtcNow
         };
 
@@ -871,6 +876,68 @@ public class DiagnosticsController : ControllerBase
         }
     }
 
+    private Dictionary<string, ILlmProvider> GetAvailableLlmProviders()
+    {
+        if (_llmProviderFactory == null || _loggerFactory == null)
+        {
+            return new Dictionary<string, ILlmProvider>();
+        }
+
+        try
+        {
+            return _llmProviderFactory.CreateAvailableProviders(_loggerFactory);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to enumerate LLM providers via factory");
+            return new Dictionary<string, ILlmProvider>();
+        }
+    }
+
+    private static bool TryResolveLlmProvider(
+        string? requestedName,
+        Dictionary<string, ILlmProvider> providers,
+        out string providerKey,
+        out ILlmProvider provider)
+    {
+        providerKey = string.Empty;
+        provider = null!;
+
+        if (providers.Count == 0)
+        {
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(requestedName))
+        {
+            providerKey = providers.Keys.First();
+            provider = providers[providerKey];
+            return true;
+        }
+
+        foreach (var kvp in providers)
+        {
+            if (string.Equals(kvp.Key, requestedName, StringComparison.OrdinalIgnoreCase))
+            {
+                providerKey = kvp.Key;
+                provider = kvp.Value;
+                return true;
+            }
+        }
+
+        foreach (var kvp in providers)
+        {
+            if (kvp.Value.GetType().Name.Contains(requestedName, StringComparison.OrdinalIgnoreCase))
+            {
+                providerKey = kvp.Key;
+                provider = kvp.Value;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /// <summary>
     /// Parse time span from string (e.g., "24h", "7d", "1h")
     /// </summary>
@@ -892,6 +959,90 @@ public class DiagnosticsController : ControllerBase
             "m" => TimeSpan.FromMinutes(number),
             _ => TimeSpan.FromHours(24)
         };
+    }
+
+    /// <summary>
+    /// Check provider availability (Ollama, Stable Diffusion, etc.)
+    /// </summary>
+    [HttpGet("providers/availability")]
+    public async Task<IActionResult> CheckProviderAvailability(CancellationToken ct = default)
+    {
+        _logger.LogInformation("Checking provider availability");
+
+        try
+        {
+            var service = new Aura.Core.Services.Setup.ProviderAvailabilityService(
+                Microsoft.Extensions.Logging.Abstractions.NullLogger<Aura.Core.Services.Setup.ProviderAvailabilityService>.Instance,
+                new System.Net.Http.HttpClient());
+
+            var report = await service.CheckAllProvidersAsync(ct);
+
+            return Ok(new
+            {
+                success = true,
+                timestamp = report.Timestamp,
+                providers = report.Providers,
+                ollamaAvailable = report.OllamaAvailable,
+                stableDiffusionAvailable = report.StableDiffusionAvailable,
+                databaseAvailable = report.DatabaseAvailable,
+                networkConnected = report.NetworkConnected
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to check provider availability");
+            return StatusCode(500, new
+            {
+                success = false,
+                error = ex.Message
+            });
+        }
+    }
+
+    /// <summary>
+    /// Get auto-configuration recommendations based on system capabilities
+    /// </summary>
+    [HttpGet("auto-config")]
+    public async Task<IActionResult> GetAutoConfiguration(CancellationToken ct = default)
+    {
+        _logger.LogInformation("Getting auto-configuration recommendations");
+
+        try
+        {
+            var dependencyDetector = new Aura.Core.Services.Setup.DependencyDetector(
+                Microsoft.Extensions.Logging.Abstractions.NullLogger<Aura.Core.Services.Setup.DependencyDetector>.Instance,
+                null,
+                new System.Net.Http.HttpClient());
+
+            var service = new Aura.Core.Services.Setup.AutoConfigurationService(
+                Microsoft.Extensions.Logging.Abstractions.NullLogger<Aura.Core.Services.Setup.AutoConfigurationService>.Instance,
+                _hardwareDetector,
+                dependencyDetector);
+
+            var config = await service.DetectOptimalSettingsAsync(ct);
+
+            return Ok(new
+            {
+                success = true,
+                recommendedThreadCount = config.RecommendedThreadCount,
+                recommendedMemoryLimitMB = config.RecommendedMemoryLimitMB,
+                recommendedQualityPreset = config.RecommendedQualityPreset,
+                useHardwareAcceleration = config.UseHardwareAcceleration,
+                hardwareAccelerationMethod = config.HardwareAccelerationMethod,
+                enableLocalProviders = config.EnableLocalProviders,
+                recommendedTier = config.RecommendedTier,
+                configuredProviders = config.ConfiguredProviders
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get auto-configuration");
+            return StatusCode(500, new
+            {
+                success = false,
+                error = ex.Message
+            });
+        }
     }
 }
 

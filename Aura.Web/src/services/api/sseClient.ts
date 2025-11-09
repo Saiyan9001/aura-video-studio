@@ -12,7 +12,12 @@ export interface SseEvent {
   eventId?: string;
 }
 
-export type SseConnectionStatus = 'connecting' | 'connected' | 'reconnecting' | 'disconnected' | 'error';
+export type SseConnectionStatus =
+  | 'connecting'
+  | 'connected'
+  | 'reconnecting'
+  | 'disconnected'
+  | 'error';
 
 export interface SseConnectionState {
   status: SseConnectionStatus;
@@ -40,6 +45,11 @@ export interface StepProgressEvent {
   progressPct: number;
   message: string;
   correlationId: string;
+  substageDetail?: string;
+  currentItem?: number;
+  totalItems?: number;
+  elapsedTime?: string;
+  estimatedTimeRemaining?: string;
 }
 
 export interface JobCompletedEvent {
@@ -164,13 +174,13 @@ export class SseClient {
     this.isManualClose = false;
     this.connectionStatus = this.reconnectAttempts > 0 ? 'reconnecting' : 'connecting';
     this.notifyStatusChange();
-    
+
     // Build URL with Last-Event-ID as query parameter for reconnection
     // Note: Native EventSource doesn't support custom headers, so we use query param
-    const connectionUrl = this.lastEventId 
+    const connectionUrl = this.lastEventId
       ? `${this.url}?lastEventId=${encodeURIComponent(this.lastEventId)}`
       : this.url;
-    
+
     logger.debug(
       `Connecting to ${this.url}${this.lastEventId ? ` (resuming from event ${this.lastEventId})` : ''}`,
       'SseClient',
@@ -249,10 +259,10 @@ export class SseClient {
             this.lastEventId = event.lastEventId;
             logger.debug(`Tracked event ID: ${event.lastEventId}`, 'SseClient', 'onEvent');
           }
-          
+
           const data = JSON.parse(event.data);
           logger.debug(`Received ${eventType}`, 'SseClient', 'onEvent', { data });
-          
+
           // Emit event with event ID for tracking
           this.emit(eventType, data, event.lastEventId);
         } catch (error) {

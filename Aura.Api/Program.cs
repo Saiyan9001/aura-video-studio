@@ -9,6 +9,7 @@ using Aura.Core.Models;
 using Aura.Core.Orchestrator;
 using Aura.Core.Planner;
 using Aura.Core.Providers;
+using Aura.Providers;
 using Aura.Providers.Images;
 using Aura.Providers.Llm;
 using Aura.Providers.Tts;
@@ -98,6 +99,26 @@ builder.Host.UseSerilog();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddProblemDetails();
 
+// Configure response compression (Brotli + Gzip)
+builder.Services.AddResponseCompression(options =>
+{
+    options.EnableForHttps = true;
+    options.Providers.Add<Microsoft.AspNetCore.ResponseCompression.BrotliCompressionProvider>();
+    options.Providers.Add<Microsoft.AspNetCore.ResponseCompression.GzipCompressionProvider>();
+    options.MimeTypes = Microsoft.AspNetCore.ResponseCompression.ResponseCompressionDefaults.MimeTypes.Concat(
+        new[] { "application/json", "text/json", "text/plain", "text/css", "text/html", "application/javascript", "text/javascript" });
+});
+
+builder.Services.Configure<Microsoft.AspNetCore.ResponseCompression.BrotliCompressionProviderOptions>(options =>
+{
+    options.Level = System.IO.Compression.CompressionLevel.Fastest;
+});
+
+builder.Services.Configure<Microsoft.AspNetCore.ResponseCompression.GzipCompressionProviderOptions>(options =>
+{
+    options.Level = System.IO.Compression.CompressionLevel.Fastest;
+});
+
 // Configure form options for large file uploads (100GB support)
 builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(options =>
 {
@@ -152,7 +173,8 @@ builder.Services.AddSwaggerGen(options =>
 // Add health checks
 builder.Services.AddHealthChecks()
     .AddCheck<Aura.Api.HealthChecks.DependencyHealthCheck>("Dependencies")
-    .AddCheck<Aura.Api.HealthChecks.DiskSpaceHealthCheck>("DiskSpace");
+    .AddCheck<Aura.Api.HealthChecks.DiskSpaceHealthCheck>("DiskSpace")
+    .AddCheck<Aura.Api.HealthChecks.ProviderHealthCheck>("Providers");
 
 // Configure database with WAL mode for better concurrency
 const string MigrationsAssembly = "Aura.Api";
@@ -166,13 +188,26 @@ builder.Services.AddDbContext<Aura.Core.Data.AuraDbContext>(options =>
 
 // Register ProjectStateRepository for state persistence
 builder.Services.AddScoped<Aura.Core.Data.ProjectStateRepository>();
-builder.Services.AddScoped<Aura.Core.Services.CheckpointManager>();
+
+// Register configuration management services
+builder.Services.AddScoped<Aura.Core.Data.ConfigurationRepository>();
+builder.Services.AddSingleton<Aura.Core.Services.ConfigurationManager>();
+builder.Services.AddSingleton<Aura.Core.Services.DatabaseInitializationService>();
+
+// CheckpointManager is scoped but cannot be injected into singleton JobRunner
+// It will be passed as null to JobRunner's optional parameter
+// builder.Services.AddScoped<Aura.Core.Services.CheckpointManager>();
+
+// Register wizard project management service
+builder.Services.AddScoped<Aura.Core.Services.WizardProjectService>();
 
 // Register project versioning services
 builder.Services.AddScoped<Aura.Core.Data.ProjectVersionRepository>();
 builder.Services.AddScoped<Aura.Core.Services.ProjectVersionService>();
-builder.Services.AddSingleton<Aura.Api.HostedServices.ProjectAutosaveService>();
-builder.Services.AddHostedService(sp => sp.GetRequiredService<Aura.Api.HostedServices.ProjectAutosaveService>());
+// ProjectAutosaveService cannot inject scoped ProjectVersionService as singleton
+// Commenting out until refactored to use IServiceScopeFactory
+// builder.Services.AddSingleton<Aura.Api.HostedServices.ProjectAutosaveService>();
+// builder.Services.AddHostedService(sp => sp.GetRequiredService<Aura.Api.HostedServices.ProjectAutosaveService>());
 
 // Register ActionService for server-side undo/redo
 builder.Services.AddScoped<Aura.Core.Services.IActionService, Aura.Core.Services.ActionService>();
@@ -211,6 +246,10 @@ builder.Services.AddSingleton<Aura.Core.Services.OllamaService>(sp =>
     return new Aura.Core.Services.OllamaService(logger, httpClient, logsDirectory);
 });
 
+// Note: OllamaDetectionService is registered in ProviderServicesExtensions.cs
+// Register OllamaDetectionService as a hosted service for background detection
+builder.Services.AddHostedService(sp => sp.GetRequiredService<Aura.Core.Services.Providers.OllamaDetectionService>());
+
 // Configure FFmpeg options from appsettings
 builder.Services.Configure<Aura.Core.Configuration.FFmpegOptions>(
     builder.Configuration.GetSection("FFmpeg"));
@@ -220,6 +259,10 @@ builder.Services.Configure<Aura.Core.Configuration.CircuitBreakerSettings>(
     builder.Configuration.GetSection("CircuitBreaker"));
 builder.Services.AddSingleton(sp => 
     sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<Aura.Core.Configuration.CircuitBreakerSettings>>().Value);
+
+// Configure OpenAI provider options from appsettings
+builder.Services.Configure<Aura.Core.Configuration.OpenAIConfiguration>(
+    builder.Configuration.GetSection("Providers:OpenAI"));
 
 // Register FFmpeg locator for centralized FFmpeg path resolution
 builder.Services.AddSingleton<Aura.Core.Dependencies.IFfmpegLocator>(sp =>
@@ -234,8 +277,39 @@ builder.Services.AddSingleton<Aura.Core.Dependencies.IFfmpegLocator>(sp =>
 builder.Services.AddSingleton<Aura.Core.Dependencies.FFmpegResolver>();
 builder.Services.AddMemoryCache(); // Required for FFmpegResolver caching
 
-builder.Services.AddHttpClient(); // For LLM providers
-builder.Services.AddSingleton<Aura.Core.Orchestrator.LlmProviderFactory>();
+// Configure distributed caching with Redis fallback to in-memory
+var cachingConfig = builder.Configuration.GetSection("Caching").Get<Aura.Core.Configuration.CachingConfiguration>() 
+    ?? new Aura.Core.Configuration.CachingConfiguration();
+
+if (cachingConfig.Enabled)
+{
+    if (cachingConfig.UseRedis && !string.IsNullOrEmpty(cachingConfig.RedisConnection))
+    {
+        try
+        {
+            builder.Services.AddStackExchangeRedisCache(options =>
+            {
+                options.Configuration = cachingConfig.RedisConnection;
+                options.InstanceName = "Aura:";
+            });
+            Log.Information("Redis distributed cache configured");
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Failed to configure Redis, falling back to in-memory cache");
+            builder.Services.AddDistributedMemoryCache();
+        }
+    }
+    else
+    {
+        builder.Services.AddDistributedMemoryCache();
+        Log.Information("In-memory distributed cache configured");
+    }
+
+    builder.Services.AddSingleton<Aura.Core.Services.Caching.IDistributedCacheService, 
+        Aura.Core.Services.Caching.DistributedCacheService>();
+    builder.Services.AddSingleton(cachingConfig);
+}
 
 // Provider mixing configuration
 builder.Services.AddSingleton(sp =>
@@ -252,9 +326,8 @@ builder.Services.AddSingleton(sp =>
 // Provider mixer
 builder.Services.AddSingleton<Aura.Core.Orchestrator.ProviderMixer>();
 
-// Provider recommendation, health monitoring, and cost tracking services
-builder.Services.AddSingleton<Aura.Core.Services.Providers.ProviderHealthMonitoringService>();
-builder.Services.AddSingleton<Aura.Core.Services.Providers.ProviderCostTrackingService>();
+// Provider recommendation, cost tracking and monitoring services
+// Note: Basic provider health/cost services registered via AddProviderHealthServices() above
 builder.Services.AddSingleton<Aura.Core.Services.CostTracking.EnhancedCostTrackingService>();
 builder.Services.AddSingleton<Aura.Core.Services.CostTracking.TokenTrackingService>();
 builder.Services.AddSingleton<Aura.Core.Services.CostTracking.RunCostReportService>();
@@ -281,14 +354,7 @@ builder.Services.AddSingleton<Aura.Core.Services.Providers.LlmProviderRecommenda
         providers);
 });
 
-// Register Health monitoring services with circuit breaker support
-builder.Services.AddSingleton<Aura.Core.Services.Health.ProviderHealthMonitor>(sp =>
-{
-    var logger = sp.GetRequiredService<ILogger<Aura.Core.Services.Health.ProviderHealthMonitor>>();
-    var circuitBreakerSettings = sp.GetRequiredService<Aura.Core.Configuration.CircuitBreakerSettings>();
-    return new Aura.Core.Services.Health.ProviderHealthMonitor(logger, circuitBreakerSettings);
-});
-builder.Services.AddSingleton<Aura.Core.Services.Health.ProviderHealthService>();
+// Register system health checker
 builder.Services.AddSingleton<Aura.Core.Services.Health.SystemHealthChecker>();
 
 // Script orchestrator with lazy provider creation
@@ -305,9 +371,8 @@ builder.Services.AddSingleton<Aura.Core.Orchestrator.ScriptOrchestrator>(sp =>
     return new Aura.Core.Orchestrator.ScriptOrchestrator(logger, loggerFactory, mixer, providers);
 });
 
-// Keep backward compatibility - single ILlmProvider for simple use cases
+// Keep backward compatibility - secure key store
 builder.Services.AddSingleton<Aura.Core.Configuration.IKeyStore, Aura.Core.Configuration.KeyStore>();
-builder.Services.AddSingleton<ILlmProvider, RuleBasedLlmProvider>();
 
 // Register provider profile and validation services
 builder.Services.AddSingleton<Aura.Core.Services.ProviderProfileService>();
@@ -467,6 +532,9 @@ builder.Services.AddSingleton<AspNetCoreRateLimit.IRateLimitConfiguration, AspNe
 builder.Services.AddSingleton<AspNetCoreRateLimit.IProcessingStrategy, AspNetCoreRateLimit.AsyncKeyLockProcessingStrategy>();
 builder.Services.AddInMemoryRateLimiting();
 
+// Register Authentication services
+builder.Services.Configure<Aura.Api.Security.ApiAuthenticationOptions>(builder.Configuration.GetSection("Authentication"));
+
 // Register Performance Telemetry services
 builder.Services.AddSingleton<Aura.Api.Telemetry.PerformanceMetrics>();
 
@@ -500,35 +568,32 @@ builder.Services.AddSingleton<Aura.Core.Services.ContentSafety.SafetyIntegration
 builder.Services.AddSingleton<Aura.Core.Audio.WavValidator>();
 builder.Services.AddSingleton<Aura.Core.Audio.SilentWavGenerator>();
 builder.Services.AddSingleton<Aura.Core.Services.Audio.NarrationOptimizationService>();
+builder.Services.AddSingleton<Aura.Core.Services.AudioIntelligence.LicensingService>();
 
-// Register TTS providers with safe DI resolution
+// Register AI Editing services
+builder.Services.AddSingleton<Aura.Core.Services.AIEditing.SceneDetectionService>();
+builder.Services.AddSingleton<Aura.Core.Services.AIEditing.HighlightDetectionService>();
+builder.Services.AddSingleton<Aura.Core.Services.AIEditing.BeatDetectionService>();
+builder.Services.AddSingleton<Aura.Core.Services.AIEditing.AutoFramingService>();
+builder.Services.AddSingleton<Aura.Core.Services.AIEditing.SpeechRecognitionService>();
+
+// Register Voice Enhancement services
+builder.Services.AddSingleton<Aura.Core.Services.VoiceEnhancement.NoiseReductionService>();
+builder.Services.AddSingleton<Aura.Core.Services.VoiceEnhancement.EqualizeService>();
+builder.Services.AddSingleton<Aura.Core.Services.VoiceEnhancement.ProsodyAdjustmentService>();
+builder.Services.AddSingleton<Aura.Core.Services.VoiceEnhancement.EmotionDetectionService>();
+builder.Services.AddSingleton<Aura.Core.Services.VoiceEnhancement.VoiceProcessingService>();
+
+// Register HTTP client factory (required by providers)
 builder.Services.AddHttpClient();
 
-// Register NullTtsProvider (always available as final fallback)
-builder.Services.AddSingleton<ITtsProvider, NullTtsProvider>();
+// Register all providers using centralized extension methods from Aura.Providers
+// This ensures consistent DI registration across LLM, TTS, and Image providers
+builder.Services.AddAuraProviders();
+builder.Services.AddProviderFactories();
+builder.Services.AddProviderHealthServices();
 
-// Register WindowsTtsProvider (platform-dependent, may not be available on Linux)
-// Only register if we can create it successfully
-if (OperatingSystem.IsWindows())
-{
-    builder.Services.AddSingleton<ITtsProvider, WindowsTtsProvider>();
-}
-
-// Register TTS provider factory
-builder.Services.AddSingleton<Aura.Core.Providers.TtsProviderFactory>();
-
-// Register Azure TTS provider and voice discovery
-builder.Services.AddSingleton<Aura.Providers.Tts.AzureTtsProvider>(sp =>
-{
-    var logger = sp.GetRequiredService<ILogger<Aura.Providers.Tts.AzureTtsProvider>>();
-    var providerSettings = sp.GetRequiredService<Aura.Core.Configuration.ProviderSettings>();
-    var apiKey = providerSettings.GetAzureSpeechKey();
-    var region = providerSettings.GetAzureSpeechRegion();
-    var offlineOnly = providerSettings.IsOfflineOnly();
-    
-    return new Aura.Providers.Tts.AzureTtsProvider(logger, apiKey, region, offlineOnly);
-});
-
+// Register Azure TTS voice discovery (additional service beyond basic provider)
 builder.Services.AddSingleton<Aura.Providers.Tts.AzureVoiceDiscovery>(sp =>
 {
     var logger = sp.GetRequiredService<ILogger<Aura.Providers.Tts.AzureVoiceDiscovery>>();
@@ -539,9 +604,6 @@ builder.Services.AddSingleton<Aura.Providers.Tts.AzureVoiceDiscovery>(sp =>
     
     return new Aura.Providers.Tts.AzureVoiceDiscovery(logger, httpClient, region, apiKey);
 });
-
-// Register Image provider factory
-builder.Services.AddSingleton<Aura.Core.Providers.ImageProviderFactory>();
 
 // DO NOT resolve default provider during startup - let it be resolved lazily when first needed
 // This prevents startup crashes due to provider resolution issues
@@ -563,8 +625,10 @@ builder.Services.AddSingleton<Aura.Core.Validation.TtsOutputValidator>();
 builder.Services.AddSingleton<Aura.Core.Validation.ImageOutputValidator>();
 builder.Services.AddSingleton<Aura.Core.Validation.LlmOutputValidator>();
 
-// Register pipeline reliability services
-builder.Services.AddSingleton<Aura.Core.Services.Health.ProviderHealthMonitor>();
+// Register Model Selection services
+builder.Services.AddSingleton<Aura.Core.AI.Adapters.ModelCatalog>();
+builder.Services.AddSingleton<Aura.Core.Services.ModelSelection.ModelSelectionStore>();
+builder.Services.AddSingleton<Aura.Core.Services.ModelSelection.ModelSelectionService>();
 
 // Register latency management services
 builder.Services.Configure<Aura.Core.Services.Performance.LlmTimeoutPolicy>(
@@ -581,6 +645,8 @@ builder.Services.AddSingleton<Aura.Core.Services.ResourceCleanupManager>();
 // Register resource management services
 builder.Services.AddSingleton<Aura.Core.Services.Resources.TemporaryFileCleanupService>();
 builder.Services.AddSingleton<Aura.Core.Services.Resources.DiskSpaceChecker>();
+builder.Services.AddSingleton<Aura.Core.Services.Resources.SystemResourceMonitor>();
+builder.Services.AddSingleton<Aura.Core.Services.Resources.ResourceThrottler>();
 
 // Register smart orchestration services
 builder.Services.AddSingleton<Aura.Core.Services.Generation.ResourceMonitor>();
@@ -1133,7 +1199,11 @@ builder.Services.AddSingleton<Aura.Core.Services.Setup.DependencyInstaller>(sp =
     return new Aura.Core.Services.Setup.DependencyInstaller(logger, httpClient);
 });
 
+// Register FFmpeg detection service with caching
+builder.Services.AddSingleton<Aura.Core.Services.Setup.IFFmpegDetectionService, Aura.Core.Services.Setup.FFmpegDetectionService>();
+
 builder.Services.AddSingleton<Aura.Api.Services.SseService>();
+builder.Services.AddSingleton<Aura.Api.Services.ProgressService>();
 
 // Register Audio/Caption services
 builder.Services.AddSingleton<Aura.Core.Audio.AudioProcessor>();
@@ -1181,6 +1251,7 @@ builder.Services.AddSingleton<Aura.Core.Services.AIEditing.SpeechRecognitionServ
 
 // Register Export services
 builder.Services.AddSingleton<Aura.Core.Services.FFmpeg.IFFmpegService, Aura.Core.Services.FFmpeg.FFmpegService>();
+builder.Services.AddSingleton<Aura.Core.Services.FFmpeg.IFFmpegStatusService, Aura.Core.Services.FFmpeg.FFmpegStatusService>();
 builder.Services.AddSingleton<Aura.Core.Services.Export.IFormatConversionService, Aura.Core.Services.Export.FormatConversionService>();
 builder.Services.AddSingleton<Aura.Core.Services.Export.IResolutionService, Aura.Core.Services.Export.ResolutionService>();
 builder.Services.AddSingleton<Aura.Core.Services.Export.IBitrateOptimizationService, Aura.Core.Services.Export.BitrateOptimizationService>();
@@ -1239,8 +1310,7 @@ builder.Services.AddSingleton<Aura.Core.Telemetry.RunTelemetryCollector>(sp =>
 });
 builder.Services.AddSingleton<Aura.Core.Telemetry.TelemetryIntegration>();
 
-// Register Provider Health Monitoring services
-builder.Services.AddSingleton<Aura.Core.Services.Health.ProviderHealthMonitor>();
+// Register Smart Provider Selector
 builder.Services.AddSingleton<Aura.Core.Services.Providers.SmartProviderSelector>();
 
 // Register ML Training services
@@ -1273,36 +1343,49 @@ builder.WebHost.ConfigureKestrel(serverOptions =>
 var app = builder.Build();
 
 // Apply database migrations
-Log.Information("Applying database migrations...");
+// Initialize database with enhanced error handling and recovery
+Log.Information("Initializing database system...");
 try
 {
-    using (var scope = app.Services.CreateScope())
+    var dbInitService = app.Services.GetRequiredService<Aura.Core.Services.DatabaseInitializationService>();
+    var initResult = await dbInitService.InitializeAsync();
+
+    if (initResult.Success)
     {
-        var db = scope.ServiceProvider.GetRequiredService<Aura.Core.Data.AuraDbContext>();
-        db.Database.Migrate();
-        
-        // Configure WAL mode for better concurrency during state persistence
-        try
+        Log.Information(
+            "Database initialization completed successfully in {Duration}ms. WAL mode: {WalMode}, Integrity: {Integrity}",
+            initResult.DurationMs, initResult.WalModeEnabled, initResult.IntegrityCheck);
+
+        if (initResult.RepairAttempted)
         {
-            db.Database.ExecuteSqlRaw("PRAGMA journal_mode=WAL;");
-            db.Database.ExecuteSqlRaw("PRAGMA synchronous=NORMAL;");
-            Log.Information("SQLite WAL mode configured successfully");
+            Log.Warning("Database repair was performed during initialization");
         }
-        catch (Exception walEx)
+
+        // Initialize configuration system with defaults
+        var configManager = app.Services.GetRequiredService<Aura.Core.Services.ConfigurationManager>();
+        await configManager.InitializeAsync();
+        Log.Information("Configuration system initialized successfully");
+    }
+    else
+    {
+        Log.Error(
+            "Database initialization failed: {Error}. Path writable: {PathWritable}, Exists: {Exists}",
+            initResult.Error, initResult.PathWritable, initResult.DatabaseExists);
+        
+        if (!initResult.PathWritable)
         {
-            Log.Warning(walEx, "Failed to configure SQLite WAL mode, using default journal mode");
+            Log.Error(
+                "Database path is not writable: {Path}. Please check file system permissions.",
+                initResult.DatabasePath);
         }
     }
-    Log.Information("Database migrations applied successfully");
 }
 catch (Exception ex)
 {
-    Log.Error(ex, "Failed to apply database migrations. The application may not function correctly.");
-    Log.Warning("Database error details: {ErrorMessage}", ex.Message);
-    Log.Warning("Please check database permissions and ensure the application has write access to: {DbPath}", 
-        Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "aura.db"));
-    // Continue startup - database features may be degraded but core functionality should work
+    Log.Error(ex, "Critical error during database initialization");
+    Log.Warning("Application will continue with degraded database functionality");
 }
+
 
 Log.Information("=== Aura Video Studio API Starting ===");
 Log.Information("Initialization Phase 1: Service Registration Complete");
@@ -1481,6 +1564,12 @@ catch (Exception ex)
 // Add correlation ID middleware early in the pipeline
 app.UseCorrelationId();
 
+// Add response compression (before most other middleware)
+app.UseResponseCompression();
+
+// Add response caching headers middleware
+app.UseMiddleware<Aura.Api.Middleware.ResponseCachingMiddleware>();
+
 // Add performance tracking middleware (after correlation ID)
 app.UsePerformanceTracking();
 
@@ -1511,6 +1600,9 @@ app.UseCors();
 
 // Add routing BEFORE static files (API routes take precedence)
 app.UseRouting();
+
+// Authentication middleware (after routing)
+app.UseApiAuthentication();
 
 // Add first-run wizard check middleware (checks if setup is completed)
 app.UseFirstRunCheck();

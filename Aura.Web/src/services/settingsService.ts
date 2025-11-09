@@ -153,46 +153,65 @@ export class SettingsService {
   async testApiKey(
     provider: string,
     apiKey: string
-  ): Promise<{ success: boolean; message: string }> {
+  ): Promise<{ success: boolean; message: string; responseTimeMs?: number }> {
     try {
       // For OpenAI, use the new live validation endpoint
       if (provider.toLowerCase() === 'openai') {
-        const response = await fetch(apiUrl('/api/providers/openai/validate'), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ apiKey }),
-        });
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
 
-        const data = await response.json();
+        try {
+          const response = await fetch(apiUrl('/api/providers/openai/validate'), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ apiKey }),
+            signal: controller.signal,
+          });
 
-        // Handle different response types
-        if (response.ok) {
-          return {
-            success: data.isValid === true,
-            message: data.message || 'API key is valid and verified with OpenAI.',
-          };
-        }
+          clearTimeout(timeoutId);
 
-        // Handle error responses (ProblemDetails format)
-        if (data.detail || data.title) {
+          const data = await response.json();
+
+          // Handle different response types
+          if (response.ok) {
+            return {
+              success: data.isValid === true,
+              message: data.message || 'API key is valid and verified with OpenAI.',
+              responseTimeMs: data.details?.responseTimeMs,
+            };
+          }
+
+          // Handle error responses (ProblemDetails format)
+          if (data.detail || data.title) {
+            return {
+              success: false,
+              message: data.detail || data.title || 'Failed to validate API key',
+            };
+          }
+
+          // Handle validation response format
+          if (data.isValid === false) {
+            return {
+              success: false,
+              message: data.message || 'API key validation failed',
+            };
+          }
+
           return {
             success: false,
-            message: data.detail || data.title || 'Failed to validate API key',
+            message: 'Failed to validate API key',
           };
+        } catch (error: unknown) {
+          clearTimeout(timeoutId);
+          
+          if (error instanceof Error && error.name === 'AbortError') {
+            return {
+              success: false,
+              message: 'Connection timeout - check network connectivity',
+            };
+          }
+          throw error;
         }
-
-        // Handle validation response format
-        if (data.isValid === false) {
-          return {
-            success: false,
-            message: data.message || 'API key validation failed',
-          };
-        }
-
-        return {
-          success: false,
-          message: 'Failed to validate API key',
-        };
       }
 
       // For other providers, use the old endpoint
@@ -209,6 +228,93 @@ export class SettingsService {
       return {
         success: false,
         message: 'Failed to test API key',
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: `Network error: ${error}`,
+      };
+    }
+  }
+
+  /**
+   * Get available models for OpenAI API key
+   */
+  async getOpenAIModels(apiKey: string): Promise<{ success: boolean; models?: string[]; message?: string }> {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 second timeout
+
+      try {
+        const response = await fetch(apiUrl('/api/providers/openai/models'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ apiKey }),
+          signal: controller.signal,
+        });
+
+        clearTimeout(timeoutId);
+
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+          return {
+            success: true,
+            models: data.models || [],
+          };
+        }
+
+        return {
+          success: false,
+          message: data.message || 'Failed to fetch models',
+        };
+      } catch (error: unknown) {
+        clearTimeout(timeoutId);
+        
+        if (error instanceof Error && error.name === 'AbortError') {
+          return {
+            success: false,
+            message: 'Connection timeout - check network connectivity',
+          };
+        }
+        throw error;
+      }
+    } catch (error) {
+      return {
+        success: false,
+        message: `Network error: ${error}`,
+      };
+    }
+  }
+
+  /**
+   * Test OpenAI script generation with a specific model
+   */
+  async testOpenAIGeneration(
+    apiKey: string,
+    model: string
+  ): Promise<{ success: boolean; generatedText?: string; responseTimeMs?: number; message?: string }> {
+    try {
+      const response = await fetch(apiUrl('/api/providers/openai/test-generation'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiKey, model }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        return {
+          success: true,
+          generatedText: data.generatedText,
+          responseTimeMs: data.responseTimeMs,
+        };
+      }
+
+      return {
+        success: false,
+        message: data.message || 'Failed to test generation',
+        responseTimeMs: data.responseTimeMs,
       };
     } catch (error) {
       return {

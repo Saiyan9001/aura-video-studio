@@ -442,13 +442,24 @@ public class SettingsController : ControllerBase
             }
 
             // Provider-specific validation
-            var result = provider.ToLowerInvariant() switch
+            var normalizedProvider = provider.Trim().ToLowerInvariant();
+
+            var result = normalizedProvider switch
             {
                 "openai" => ValidateOpenAIKey(apiKey),
                 "anthropic" => ValidateAnthropicKey(apiKey),
                 "stabilityai" => ValidateStabilityAIKey(apiKey),
                 "elevenlabs" => ValidateElevenLabsKey(apiKey),
-                _ => new { success = false, message = "Unknown provider" }
+                "pexels" => ValidatePexelsKey(apiKey),
+                "pixabay" => ValidatePixabayKey(apiKey),
+                "unsplash" => ValidateUnsplashKey(apiKey),
+                "google" => ValidateGoogleKey(apiKey),
+                "azure" => ValidateAzureKey(apiKey),
+                _ => new
+                {
+                    success = false,
+                    message = $"Unknown provider '{provider}'."
+                }
             };
 
             return Ok(result);
@@ -529,6 +540,12 @@ public class SettingsController : ControllerBase
         {
             _logger.LogDebug("User settings file not found, using defaults");
             settings = new UserSettings();
+            
+            if (string.IsNullOrWhiteSpace(settings.General.DefaultProjectSaveLocation))
+            {
+                settings.General.DefaultProjectSaveLocation = Aura.Core.Services.DefaultPathProvider.GetDefaultSaveLocation();
+                _logger.LogInformation("Initialized default save location: {Location}", settings.General.DefaultProjectSaveLocation);
+            }
         }
         else
         {
@@ -542,6 +559,12 @@ public class SettingsController : ControllerBase
                 _logger.LogWarning(ex, "Error reading user settings file, using defaults");
                 settings = new UserSettings();
             }
+        }
+
+        if (string.IsNullOrWhiteSpace(settings.General.DefaultProjectSaveLocation))
+        {
+            settings.General.DefaultProjectSaveLocation = Aura.Core.Services.DefaultPathProvider.GetDefaultSaveLocation();
+            _logger.LogInformation("Default save location not configured, initialized to: {Location}", settings.General.DefaultProjectSaveLocation);
         }
 
         // Load API keys from secure encrypted storage (never from settings file)
@@ -715,6 +738,111 @@ public class SettingsController : ControllerBase
             {
                 success = false,
                 message = "Invalid ElevenLabs API key format. Must be at least 32 characters."
+            };
+        }
+
+        return new
+        {
+            success = true,
+            message = "API key format is valid"
+        };
+    }
+
+    /// <summary>
+    /// Validate Pexels API key format
+    /// </summary>
+    private object ValidatePexelsKey(string apiKey)
+    {
+        if (apiKey.Length < 20)
+        {
+            return new
+            {
+                success = false,
+                message = "Pexels API keys should be at least 20 characters long."
+            };
+        }
+
+        return new
+        {
+            success = true,
+            message = "API key format is valid"
+        };
+    }
+
+    /// <summary>
+    /// Validate Pixabay API key format
+    /// </summary>
+    private object ValidatePixabayKey(string apiKey)
+    {
+        if (apiKey.Length < 10)
+        {
+            return new
+            {
+                success = false,
+                message = "Pixabay API keys should be at least 10 characters long."
+            };
+        }
+
+        return new
+        {
+            success = true,
+            message = "API key format is valid"
+        };
+    }
+
+    /// <summary>
+    /// Validate Unsplash API key format
+    /// </summary>
+    private object ValidateUnsplashKey(string apiKey)
+    {
+        if (apiKey.Length < 16)
+        {
+            return new
+            {
+                success = false,
+                message = "Unsplash API keys should be at least 16 characters long."
+            };
+        }
+
+        return new
+        {
+            success = true,
+            message = "API key format is valid"
+        };
+    }
+
+    /// <summary>
+    /// Validate Google API key format
+    /// </summary>
+    private object ValidateGoogleKey(string apiKey)
+    {
+        if (!apiKey.StartsWith("AIza", StringComparison.OrdinalIgnoreCase) || apiKey.Length < 20)
+        {
+            return new
+            {
+                success = false,
+                message = "Google API keys typically start with 'AIza' and should be at least 20 characters."
+            };
+        }
+
+        return new
+        {
+            success = true,
+            message = "API key format is valid"
+        };
+    }
+
+    /// <summary>
+    /// Validate Azure API key format
+    /// </summary>
+    private object ValidateAzureKey(string apiKey)
+    {
+        if (apiKey.Length < 32)
+        {
+            return new
+            {
+                success = false,
+                message = "Azure API keys should be at least 32 characters long."
             };
         }
 

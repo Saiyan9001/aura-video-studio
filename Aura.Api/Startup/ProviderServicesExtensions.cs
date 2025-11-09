@@ -39,7 +39,7 @@ public static class ProviderServicesExtensions
 
         // LLM providers
         services.AddSingleton<LlmProviderFactory>();
-        services.AddSingleton<ILlmProvider, RuleBasedLlmProvider>();
+        services.AddSingleton<ILlmProvider, CompositeLlmProvider>();
 
         // Provider mixing configuration
         services.AddSingleton(sp =>
@@ -57,8 +57,34 @@ public static class ProviderServicesExtensions
 
         // Provider recommendation, health monitoring, and cost tracking
         services.AddSingleton<Aura.Core.Services.Providers.ProviderHealthMonitoringService>();
+        services.AddSingleton<Aura.Core.Services.Providers.ProviderCircuitBreakerService>();
         services.AddSingleton<Aura.Core.Services.Providers.ProviderCostTrackingService>();
         services.AddSingleton<Aura.Core.Services.CostTracking.EnhancedCostTrackingService>();
+        
+        // Ollama detection service
+        services.AddSingleton<Aura.Core.Services.Providers.OllamaDetectionService>(sp =>
+        {
+            var logger = sp.GetRequiredService<ILogger<Aura.Core.Services.Providers.OllamaDetectionService>>();
+            var httpClient = sp.GetRequiredService<IHttpClientFactory>().CreateClient();
+            var cache = sp.GetRequiredService<Microsoft.Extensions.Caching.Memory.IMemoryCache>();
+            var settings = sp.GetRequiredService<ProviderSettings>();
+            var baseUrl = settings.GetOllamaUrl();
+            return new Aura.Core.Services.Providers.OllamaDetectionService(logger, httpClient, cache, baseUrl);
+        });
+        
+        // Stable Diffusion detection service
+        services.AddSingleton<Aura.Core.Services.Providers.StableDiffusionDetectionService>(sp =>
+        {
+            var logger = sp.GetRequiredService<ILogger<Aura.Core.Services.Providers.StableDiffusionDetectionService>>();
+            var httpClient = sp.GetRequiredService<IHttpClientFactory>().CreateClient();
+            var settings = sp.GetRequiredService<ProviderSettings>();
+            var baseUrl = settings.GetStableDiffusionUrl();
+            return new Aura.Core.Services.Providers.StableDiffusionDetectionService(logger, httpClient, baseUrl);
+        });
+        
+        // Image provider fallback service
+        services.AddSingleton<Aura.Core.Services.Providers.ImageProviderFallbackService>();
+        
         services.AddSingleton<Aura.Core.Services.Providers.LlmProviderRecommendationService>(sp =>
         {
             var logger = sp.GetRequiredService<ILogger<Aura.Core.Services.Providers.LlmProviderRecommendationService>>();

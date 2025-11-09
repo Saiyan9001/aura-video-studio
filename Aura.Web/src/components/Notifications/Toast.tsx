@@ -20,6 +20,15 @@ const useStyles = makeStyles({
     gap: tokens.spacingHorizontalS,
     marginTop: tokens.spacingVerticalS,
   },
+  toastHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: tokens.spacingHorizontalS,
+  },
+  toastTitleContent: {
+    flex: 1,
+  },
 });
 
 export interface ToastNotificationOptions {
@@ -66,7 +75,18 @@ export function ToastNotification({
 
   return (
     <Toast>
-      <ToastTitle action={getIcon()}>{title}</ToastTitle>
+      <div className={styles.toastHeader}>
+        <div className={styles.toastTitleContent}>
+          <ToastTitle action={getIcon()}>{title}</ToastTitle>
+        </div>
+        <Button
+          size="small"
+          appearance="transparent"
+          icon={<Dismiss24Regular />}
+          onClick={handleDismiss}
+          aria-label="Dismiss notification"
+        />
+      </div>
       <ToastBody>
         <div>
           <div>{message}</div>
@@ -84,14 +104,6 @@ export function ToastNotification({
               Open File
             </Button>
           )}
-          <Button
-            size="small"
-            appearance="subtle"
-            icon={<Dismiss24Regular />}
-            onClick={handleDismiss}
-          >
-            Dismiss
-          </Button>
         </ToastFooter>
       )}
     </Toast>

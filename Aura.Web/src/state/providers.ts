@@ -1,5 +1,7 @@
 // Provider state management for preflight checks
 
+import { create } from 'zustand';
+
 export type CheckStatus = 'pass' | 'warn' | 'fail';
 
 export type FixActionType = 'Install' | 'Start' | 'OpenSettings' | 'SwitchToFree' | 'Help';
@@ -153,17 +155,17 @@ export type LlmOperationType =
 export interface ProviderPreferences {
   // Master toggle: enable provider recommendations (OFF by default - opt-in)
   enableRecommendations: boolean;
-  
+
   // Assistance level (only applies when enableRecommendations is true)
   assistanceLevel: AssistanceLevelType;
-  
+
   // Separate feature toggles (all OFF by default)
   enableHealthMonitoring: boolean;
   enableCostTracking: boolean;
   enableLearning: boolean;
   enableProfiles: boolean;
   enableAutoFallback: boolean;
-  
+
   // Manual configuration (always available)
   globalDefault?: string;
   alwaysUseDefault: boolean;
@@ -171,7 +173,7 @@ export interface ProviderPreferences {
   activeProfile: ProviderProfileType;
   excludedProviders: string[];
   pinnedProvider?: string;
-  
+
   // Fallback and budget settings (only used when respective features enabled)
   fallbackChains: Record<LlmOperationType, string[]>;
   monthlyBudgetLimit?: number;
@@ -188,7 +190,7 @@ export const defaultProviderPreferences: ProviderPreferences = {
   enableLearning: false,
   enableProfiles: false,
   enableAutoFallback: false,
-  
+
   // Manual configuration defaults
   alwaysUseDefault: false,
   perOperationOverrides: {} as Record<LlmOperationType, string>,
@@ -198,3 +200,67 @@ export const defaultProviderPreferences: ProviderPreferences = {
   perProviderBudgetLimits: {},
   hardBudgetLimit: false,
 };
+
+// Provider status information
+export interface ProviderStatus {
+  name: string;
+  isConfigured: boolean;
+  isAvailable: boolean;
+  status: string;
+  lastValidated?: string;
+  errorMessage?: string;
+}
+
+// Provider store state
+interface ProviderStoreState {
+  providerStatuses: ProviderStatus[];
+  isLoadingStatuses: boolean;
+  lastStatusCheck: Date | null;
+
+  // Actions
+  setProviderStatuses: (statuses: ProviderStatus[]) => void;
+  setIsLoadingStatuses: (isLoading: boolean) => void;
+  updateProviderStatus: (name: string, status: Partial<ProviderStatus>) => void;
+  refreshProviderStatuses: () => Promise<void>;
+}
+
+// Provider store using Zustand
+export const useProviderStore = create<ProviderStoreState>((set) => ({
+  providerStatuses: [],
+  isLoadingStatuses: false,
+  lastStatusCheck: null,
+
+  setProviderStatuses: (statuses: ProviderStatus[]) =>
+    set({ providerStatuses: statuses, lastStatusCheck: new Date() }),
+
+  setIsLoadingStatuses: (isLoading: boolean) => set({ isLoadingStatuses: isLoading }),
+
+  updateProviderStatus: (name: string, statusUpdate: Partial<ProviderStatus>) =>
+    set((state) => ({
+      providerStatuses: state.providerStatuses.map((p) =>
+        p.name === name ? { ...p, ...statusUpdate } : p
+      ),
+    })),
+
+  refreshProviderStatuses: async () => {
+    set({ isLoadingStatuses: true });
+    try {
+      const response = await fetch('/api/providers/status');
+      if (response.ok) {
+        const statuses = (await response.json()) as ProviderStatus[];
+        set({
+          providerStatuses: statuses,
+          lastStatusCheck: new Date(),
+          isLoadingStatuses: false,
+        });
+      } else {
+        console.error('Failed to fetch provider statuses:', response.statusText);
+        set({ isLoadingStatuses: false });
+      }
+    } catch (error: unknown) {
+      const errorObj = error instanceof Error ? error : new Error(String(error));
+      console.error('Error fetching provider statuses:', errorObj);
+      set({ isLoadingStatuses: false });
+    }
+  },
+}));

@@ -149,6 +149,8 @@ public class FFmpegController : ControllerBase
             {
                 return StatusCode(500, new
                 {
+                    success = false,
+                    message = installResult.ErrorMessage ?? "Failed to install FFmpeg",
                     type = "https://docs.aura.studio/errors/E313",
                     title = "Installation Failed",
                     status = 500,
@@ -166,6 +168,7 @@ public class FFmpegController : ControllerBase
             return Ok(new
             {
                 success = true,
+                message = "FFmpeg installed successfully",
                 path = installResult.FfmpegPath,
                 version = installResult.ValidationOutput,
                 installedAt = installResult.InstalledAt,
@@ -178,6 +181,8 @@ public class FFmpegController : ControllerBase
 
             return StatusCode(500, new
             {
+                success = false,
+                message = $"Unexpected error during FFmpeg installation: {ex.Message}",
                 type = "https://docs.aura.studio/errors/E313",
                 title = "Installation Error",
                 status = 500,

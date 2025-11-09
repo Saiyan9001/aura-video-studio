@@ -29,6 +29,7 @@ import {
   ShieldCheckmark24Regular,
   SlideSettings24Regular,
   DocumentSearch24Regular,
+  Stethoscope24Regular,
 } from '@fluentui/react-icons';
 
 export interface NavItem {
@@ -146,6 +147,7 @@ export const navItems: NavItem[] = [
     icon: ShieldCheckmark24Regular,
     path: '/verification',
   },
+  { key: 'diagnostics', name: 'Diagnostics', icon: Stethoscope24Regular, path: '/diagnostics' },
   { key: 'logs', name: 'Logs', icon: DocumentBulletList24Regular, path: '/logs' },
   { key: 'settings', name: 'Settings', icon: Settings24Regular, path: '/settings' },
 ];

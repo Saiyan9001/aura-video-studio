@@ -1,0 +1,16 @@
+{
+  "//": "Optional configuration for placeholder scanner",
+  "//": "Copy to .placeholder-scan.json to use",
+  
+  "allowedPaths": [
+    "test/fixtures/",
+    "examples/placeholder-demo/"
+  ],
+  
+  "extraForbidden": [
+    "\\bNOTE\\b",
+    "\\bREVIEW\\b"
+  ],
+  
+  "warnOnly": false
+}

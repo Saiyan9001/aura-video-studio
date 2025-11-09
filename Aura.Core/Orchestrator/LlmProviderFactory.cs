@@ -1,9 +1,7 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Net.Http;
-using System.Text.Json;
 using Aura.Core.Configuration;
 using Aura.Core.Providers;
 using Microsoft.Extensions.Logging;
@@ -18,20 +16,18 @@ public class LlmProviderFactory
     private readonly ILogger<LlmProviderFactory> _logger;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ProviderSettings _providerSettings;
-    private readonly string _apiKeysPath;
+    private readonly IKeyStore _keyStore;
 
     public LlmProviderFactory(
         ILogger<LlmProviderFactory> logger,
         IHttpClientFactory httpClientFactory,
-        ProviderSettings providerSettings)
+        ProviderSettings providerSettings,
+        IKeyStore keyStore)
     {
         _logger = logger;
         _httpClientFactory = httpClientFactory;
         _providerSettings = providerSettings;
-        _apiKeysPath = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "Aura",
-            "apikeys.json");
+        _keyStore = keyStore;
     }
 
     /// <summary>
@@ -73,8 +69,19 @@ public class LlmProviderFactory
             _logger.LogWarning(ex, "✗ Ollama provider registration failed");
         }
 
-        // Load API keys
-        var apiKeys = LoadApiKeys();
+        // Load API keys from secure store
+        Dictionary<string, string> apiKeys;
+        try
+        {
+            // Ensure we always have the latest keys (handles updates during runtime)
+            _keyStore.Reload();
+            apiKeys = _keyStore.GetAllKeys();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to load API keys from secure storage, continuing with local/RuleBased providers only");
+            apiKeys = new Dictionary<string, string>();
+        }
 
         // Try to create Pro providers if API keys are available
         try
@@ -319,26 +326,5 @@ public class LlmProviderFactory
             apiKey,
             "gemini-pro"
         )!;
-    }
-
-    private Dictionary<string, string> LoadApiKeys()
-    {
-        try
-        {
-            if (!File.Exists(_apiKeysPath))
-            {
-                _logger.LogDebug("API keys file not found at {Path}", _apiKeysPath);
-                return new Dictionary<string, string>();
-            }
-
-            var json = File.ReadAllText(_apiKeysPath);
-            var keys = JsonSerializer.Deserialize<Dictionary<string, string>>(json);
-            return keys ?? new Dictionary<string, string>();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to load API keys from {Path}", _apiKeysPath);
-            return new Dictionary<string, string>();
-        }
     }
 }

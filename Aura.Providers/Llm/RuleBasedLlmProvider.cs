@@ -8,6 +8,7 @@ using Aura.Core.Models.Narrative;
 using Aura.Core.Models.Visual;
 using Aura.Core.Providers;
 using Aura.Core.Services.AI;
+using Aura.Core.Templates;
 using Microsoft.Extensions.Logging;
 
 namespace Aura.Providers.Llm;
@@ -105,123 +106,45 @@ public class RuleBasedLlmProvider : ILlmProvider
 
     private string GenerateScript(Brief brief, PlanSpec spec, int sceneCount, int wordsPerScene)
     {
-        var script = new List<string>();
+        // Determine video type from topic keywords
+        var videoType = ScriptTemplates.DetermineVideoType(brief.Topic);
         
-        // Add title
-        script.Add($"# {brief.Topic}");
-        script.Add("");
+        _logger.LogInformation("Detected video type: {VideoType} for topic: {Topic}", 
+            videoType, brief.Topic);
         
-        // Introduction
-        script.Add("## Introduction");
-        script.Add(GenerateIntroduction(brief));
-        script.Add("");
+        // Calculate target word count
+        int targetWordCount = sceneCount * wordsPerScene;
         
-        // Body sections
-        for (int i = 1; i <= sceneCount - 2; i++)
+        // Use template-based generation for professional content
+        string templateScript = ScriptTemplates.GenerateFromTemplate(videoType, brief.Topic, targetWordCount);
+        
+        // If template is too short, supplement with additional content
+        if (CountWords(templateScript) < targetWordCount)
         {
-            string heading = $"## Section {i}";
-            string content = GenerateSection(brief, i, wordsPerScene);
-            
-            script.Add(heading);
-            script.Add(content);
-            script.Add("");
+            templateScript = ExpandScriptToTargetLength(templateScript, brief, targetWordCount);
         }
         
-        // Conclusion
-        script.Add("## Conclusion");
-        script.Add(GenerateConclusion(brief));
-        
-        return string.Join("\n", script);
+        return templateScript;
     }
-
-    private string GenerateIntroduction(Brief brief)
+    
+    private string ExpandScriptToTargetLength(string script, Brief brief, int targetWordCount)
     {
-        List<string> hooks = new()
-        {
-            "Have you ever wondered about {0}? It's a fascinating topic that deserves exploration.",
-            "In today's video, we're diving deep into {0}. This is something that affects many people.",
-            "{0} has become increasingly important in recent years. Let's explore why.",
-            "Welcome back! Today we're looking at {0}, a subject that's been requested by many viewers."
-        };
-
-        List<string> promises = new()
-        {
-            "By the end of this video, you'll understand the key aspects of this topic and how it can benefit you.",
-            "We'll cover everything you need to know, from the basics to more advanced concepts.",
-            "I'm going to break this down into simple, actionable steps that anyone can follow.",
-            "We'll explore the what, why, and how so you'll have a complete understanding."
-        };
-
-        string hook = hooks[_random.Next(hooks.Count)];
-        string promise = promises[_random.Next(promises.Count)];
+        var currentWords = CountWords(script);
         
-        return string.Format(hook, brief.Topic) + " " + promise;
-    }
-
-    private string GenerateSection(Brief brief, int sectionNumber, int targetWords)
-    {
-        List<string> templates = new()
+        if (currentWords >= targetWordCount)
         {
-            "One important aspect of {0} is worth highlighting. This relates to how it functions in everyday scenarios.",
-            "When we look closely at {0}, we can see several key factors at play. These elements work together to create the overall effect.",
-            "Let's examine {0} from a different perspective. This approach reveals insights that might otherwise be missed.",
-            "The history of {0} provides valuable context for our discussion. Understanding its development helps explain its current state."
-        };
-
-        List<string> midSentences = new()
-        {
-            "This is particularly relevant when considering the broader implications.",
-            "Many experts in the field have noted this pattern over time.",
-            "Research has consistently shown this to be the case across different contexts.",
-            "It's worth taking a moment to appreciate the complexity here."
-        };
-
-        List<string> closingSentences = new()
-        {
-            "This points us toward the next important consideration.",
-            "With that understanding, we can now move to the next topic.",
-            "These insights form a foundation for what comes next.",
-            "Keeping these points in mind will help as we continue our exploration."
-        };
-
-        string template = templates[_random.Next(templates.Count)];
-        string midSentence = midSentences[_random.Next(midSentences.Count)];
-        string closingSentence = closingSentences[_random.Next(closingSentences.Count)];
-        
-        string baseContent = string.Format(template, brief.Topic) + " " + midSentence + " " + closingSentence;
-        
-        // Expand content to reach target word count if needed
-        while (CountWords(baseContent) < targetWords)
-        {
-            string filler = midSentences[_random.Next(midSentences.Count)];
-            baseContent += " " + filler;
+            return script;
         }
         
-        return baseContent;
-    }
-
-    private string GenerateConclusion(Brief brief)
-    {
-        List<string> conclusions = new()
-        {
-            "In conclusion, {0} represents an important area that continues to evolve. The concepts we've covered today should give you a solid foundation.",
-            "To summarize what we've learned about {0}: it's a multifaceted topic with several key considerations that we've explored together.",
-            "As we wrap up our discussion on {0}, remember the main points we've covered and consider how they might apply to your situation.",
-            "That brings us to the end of our exploration of {0}. I hope you've gained some valuable insights that you can apply going forward."
-        };
-
-        List<string> callsToAction = new()
-        {
-            "If you found this video helpful, please like and subscribe for more content like this. Let me know in the comments what topics you'd like to see next!",
-            "Don't forget to subscribe and hit the notification bell so you never miss an upload. Share this video with someone who might find it useful!",
-            "Thanks for watching! If you have questions, leave them in the comments below, and I'll do my best to answer them in a future video.",
-            "Remember to like, share, and subscribe for more content. Your support helps the channel grow and allows me to create more videos like this one."
-        };
-
-        string conclusion = conclusions[_random.Next(conclusions.Count)];
-        string cta = callsToAction[_random.Next(callsToAction.Count)];
+        var sections = new List<string> { script };
         
-        return string.Format(conclusion, brief.Topic) + " " + cta;
+        sections.Add("");
+        sections.Add("## Additional Insights");
+        sections.Add($"Let's explore some additional aspects of {brief.Topic} that enhance our understanding. These supplementary points provide extra context and depth to what we've already covered.");
+        sections.Add("");
+        sections.Add("The broader implications are worth considering. When we look at the bigger picture, we can see how this topic connects to related areas and affects various aspects of our work or lives.");
+        
+        return string.Join("\n", sections);
     }
 
     private int CountWords(string text)
@@ -607,5 +530,334 @@ public class RuleBasedLlmProvider : ILlmProvider
             .Split(new[] { ' ', '\t', '\n', '\r', '.', ',', '!', '?', ';', ':' }, StringSplitOptions.RemoveEmptyEntries)
             .Where(w => w.Length > 3 && !stopWords.Contains(w))
             .ToList();
+    }
+
+    /// <summary>
+    /// Generate a complete Script object with scenes from a brief string and duration.
+    /// This is the simplified offline fallback API that works without any external dependencies.
+    /// Execution time is guaranteed to be under 1 second.
+    /// Never throws exceptions - always returns a valid script.
+    /// </summary>
+    /// <param name="brief">Creative brief describing the video content</param>
+    /// <param name="durationSeconds">Target duration in seconds</param>
+    /// <param name="ct">Cancellation token</param>
+    /// <returns>Complete Script object with all scenes populated</returns>
+    public Task<Core.Models.Generation.Script> GenerateScriptAsync(string brief, int durationSeconds, CancellationToken ct = default)
+    {
+        try
+        {
+            _logger.LogInformation("RuleBased provider generating script for {Duration}s video", durationSeconds);
+            
+            var startTime = DateTime.UtcNow;
+            
+            var keywords = ExtractKeywords(brief);
+            var videoType = DetectVideoType(keywords, brief);
+            
+            var sceneCount = Math.Max(3, Math.Min(20, durationSeconds / 10));
+            _logger.LogInformation("RuleBased provider generated {SceneCount} scenes for {Duration}s video", sceneCount, durationSeconds);
+            
+            var scenes = new List<Core.Models.Generation.ScriptScene>();
+            var sceneDurations = CalculateSceneDurations(sceneCount, durationSeconds);
+            
+            for (int i = 0; i < sceneCount; i++)
+            {
+                var sceneNumber = i + 1;
+                var isFirst = i == 0;
+                var isLast = i == sceneCount - 1;
+                
+                var narration = GenerateSceneNarration(videoType, sceneNumber, sceneCount, isFirst, isLast, keywords, brief);
+                var visualPrompt = GenerateVisualPrompt(narration, keywords);
+                var sceneDuration = sceneDurations[i];
+                var transition = DetermineTransition(isLast);
+                
+                var scene = new Core.Models.Generation.ScriptScene
+                {
+                    Number = sceneNumber,
+                    Narration = narration,
+                    VisualPrompt = visualPrompt,
+                    Duration = TimeSpan.FromSeconds(sceneDuration),
+                    Transition = transition
+                };
+                
+                scenes.Add(scene);
+            }
+            
+            var totalDuration = TimeSpan.FromSeconds(durationSeconds);
+            var mainTopic = keywords.FirstOrDefault() ?? "content";
+            
+            var executionTime = DateTime.UtcNow - startTime;
+            
+            var script = new Core.Models.Generation.Script
+            {
+                Title = $"{mainTopic} - AI Generated Video",
+                Scenes = scenes,
+                TotalDuration = totalDuration,
+                Metadata = new Core.Models.Generation.ScriptMetadata
+                {
+                    GeneratedAt = DateTime.UtcNow,
+                    ProviderName = "RuleBased",
+                    ModelUsed = "Template-Based",
+                    TokensUsed = 0,
+                    EstimatedCost = 0m,
+                    Tier = Core.Models.Generation.ProviderTier.Free,
+                    GenerationTime = executionTime
+                },
+                CorrelationId = Guid.NewGuid().ToString()
+            };
+            
+            _logger.LogInformation("RuleBased script generation completed in {Ms}ms", executionTime.TotalMilliseconds);
+            
+            return Task.FromResult(script);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error in RuleBased script generation, returning fallback");
+            
+            var fallbackScene = new Core.Models.Generation.ScriptScene
+            {
+                Number = 1,
+                Narration = "Welcome. This is a brief video about the requested topic.",
+                VisualPrompt = "abstract gradient background, blue and purple colors",
+                Duration = TimeSpan.FromSeconds(durationSeconds),
+                Transition = Core.Models.Generation.TransitionType.Cut
+            };
+            
+            return Task.FromResult(new Core.Models.Generation.Script
+            {
+                Title = "Generated Video",
+                Scenes = new List<Core.Models.Generation.ScriptScene> { fallbackScene },
+                TotalDuration = TimeSpan.FromSeconds(durationSeconds),
+                Metadata = new Core.Models.Generation.ScriptMetadata
+                {
+                    GeneratedAt = DateTime.UtcNow,
+                    ProviderName = "RuleBased",
+                    ModelUsed = "Template-Based-Fallback",
+                    TokensUsed = 0,
+                    EstimatedCost = 0m,
+                    Tier = Core.Models.Generation.ProviderTier.Free,
+                    GenerationTime = TimeSpan.FromMilliseconds(1)
+                },
+                CorrelationId = Guid.NewGuid().ToString()
+            });
+        }
+    }
+
+    /// <summary>
+    /// Extract top 5 keywords from brief using frequency analysis.
+    /// Filters out stop words and keeps words with length >= 4.
+    /// </summary>
+    private List<string> ExtractKeywords(string brief)
+    {
+        if (string.IsNullOrWhiteSpace(brief) || brief.Length < 10)
+        {
+            return new List<string> { "video", "content", "information" };
+        }
+        
+        var stopWords = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "the", "a", "an", "is", "are", "was", "were", "in", "on", "at", "to", "for", 
+            "of", "and", "or", "but", "this", "that", "with", "from", "by", "about"
+        };
+        
+        var words = brief.Split(new[] { ' ', '\t', '\n', '\r', '.', ',', '!', '?', ';', ':', '-', '_' }, 
+            StringSplitOptions.RemoveEmptyEntries)
+            .Select(w => w.ToLowerInvariant())
+            .Where(w => w.Length >= 4 && !stopWords.Contains(w))
+            .ToList();
+        
+        var wordFrequency = words
+            .GroupBy(w => w)
+            .OrderByDescending(g => g.Count())
+            .Take(5)
+            .Select(g => g.Key)
+            .ToList();
+        
+        if (wordFrequency.Count == 0)
+        {
+            return new List<string> { "video", "content", "information" };
+        }
+        
+        return wordFrequency;
+    }
+
+    /// <summary>
+    /// Detect video type from keywords and brief content.
+    /// Returns Tutorial, Marketing, Review, or General based on keyword analysis.
+    /// </summary>
+    private string DetectVideoType(List<string> keywords, string brief)
+    {
+        var briefLower = brief.ToLowerInvariant();
+        var keywordsStr = string.Join(" ", keywords).ToLowerInvariant();
+        var combinedText = $"{briefLower} {keywordsStr}";
+        
+        var tutorialKeywords = new[] { "tutorial", "how", "learn", "guide", "teach", "lesson", "course", "training" };
+        var marketingKeywords = new[] { "product", "buy", "sale", "offer", "discount", "deal", "purchase", "customer" };
+        var reviewKeywords = new[] { "review", "opinion", "thoughts", "rating", "recommend", "experience", "pros", "cons" };
+        
+        var tutorialCount = tutorialKeywords.Count(kw => combinedText.Contains(kw));
+        var marketingCount = marketingKeywords.Count(kw => combinedText.Contains(kw));
+        var reviewCount = reviewKeywords.Count(kw => combinedText.Contains(kw));
+        
+        string detectedType;
+        if (tutorialCount > marketingCount && tutorialCount > reviewCount)
+        {
+            detectedType = "Tutorial";
+        }
+        else if (marketingCount > reviewCount)
+        {
+            detectedType = "Marketing";
+        }
+        else if (reviewCount > 0)
+        {
+            detectedType = "Review";
+        }
+        else
+        {
+            detectedType = "General";
+        }
+        
+        _logger.LogInformation("Detected video type: {Type}", detectedType);
+        return detectedType;
+    }
+
+    /// <summary>
+    /// Generate narration for a specific scene using templates based on video type.
+    /// </summary>
+    private string GenerateSceneNarration(string videoType, int sceneNumber, int totalScenes, 
+        bool isFirst, bool isLast, List<string> keywords, string originalBrief)
+    {
+        var mainTopic = keywords.FirstOrDefault() ?? "topic";
+        var keyword1 = keywords.ElementAtOrDefault(1) ?? "concepts";
+        var keyword2 = keywords.ElementAtOrDefault(2) ?? "ideas";
+        var keyword = keywords.ElementAtOrDefault(sceneNumber % keywords.Count) ?? "aspect";
+        
+        if (isFirst)
+        {
+            return videoType switch
+            {
+                "Tutorial" => $"Welcome! Today we'll learn about {mainTopic}. We'll cover {keyword1}, {keyword2}, and more.",
+                "Marketing" => $"Looking for the best {mainTopic}? You're in the right place!",
+                "Review" => $"Today I'm reviewing {mainTopic}. Let's see if it lives up to the hype.",
+                _ => $"Welcome. Today we're discussing {mainTopic}."
+            };
+        }
+        
+        if (isLast)
+        {
+            return videoType switch
+            {
+                "Tutorial" => $"That's everything about {mainTopic}. Thanks for watching, and happy learning!",
+                "Marketing" => $"Ready to get started with {mainTopic}? Click the link below!",
+                "Review" => $"Overall, {mainTopic} is worth considering. My rating: recommended.",
+                _ => $"That concludes our look at {mainTopic}. Thank you for watching."
+            };
+        }
+        
+        var relatedConcept = keywords.ElementAtOrDefault((sceneNumber + 1) % keywords.Count) ?? "related concepts";
+        var benefit = keywords.ElementAtOrDefault((sceneNumber + 2) % keywords.Count) ?? "advantages";
+        var reason = $"it provides {benefit}";
+        
+        return videoType switch
+        {
+            "Tutorial" => $"Let's explore {keyword}. This is important because it helps you understand {relatedConcept}.",
+            "Marketing" => $"Here's why {keyword} matters. Our solution offers {benefit}.",
+            "Review" => $"The {keyword} feature is impressive because {reason}.",
+            _ => $"An important aspect is {keyword}. This relates to {relatedConcept}."
+        };
+    }
+
+    /// <summary>
+    /// Generate visual prompt for scene based on narration and keywords.
+    /// Keeps prompts under 100 characters with professional style descriptors.
+    /// </summary>
+    private string GenerateVisualPrompt(string narration, List<string> keywords)
+    {
+        if (string.IsNullOrWhiteSpace(narration) && keywords.Count == 0)
+        {
+            return "abstract gradient background, blue and purple colors";
+        }
+        
+        var narrationWords = narration.Split(new[] { ' ', '\t', '\n', '\r', '.', ',', '!', '?', ';', ':' }, 
+            StringSplitOptions.RemoveEmptyEntries)
+            .Where(w => w.Length > 4)
+            .Take(5)
+            .ToList();
+        
+        var mainNoun = narrationWords.FirstOrDefault() ?? keywords.FirstOrDefault() ?? "scene";
+        
+        var styleDescriptor = _random.Next(2) == 0 ? "professional photograph of" : "modern illustration of";
+        var subject = mainNoun.ToLowerInvariant();
+        var context = "clean white background, studio lighting, high quality";
+        
+        var prompt = $"{styleDescriptor} {subject}, {context}";
+        
+        if (prompt.Length > 100)
+        {
+            prompt = $"{styleDescriptor} {subject}";
+        }
+        
+        return prompt;
+    }
+
+    /// <summary>
+    /// Calculate duration for each scene with proper intro/outro weighting.
+    /// Intro gets 15%, outro gets 15%, middle scenes split remaining 70%.
+    /// Includes 1 second buffer for transitions.
+    /// </summary>
+    private List<double> CalculateSceneDurations(int sceneCount, int totalDurationSeconds)
+    {
+        var durations = new List<double>();
+        
+        if (sceneCount == 1)
+        {
+            durations.Add(totalDurationSeconds);
+            return durations;
+        }
+        
+        if (sceneCount == 2)
+        {
+            durations.Add(totalDurationSeconds * 0.5);
+            durations.Add(totalDurationSeconds * 0.5);
+            return durations;
+        }
+        
+        var introDuration = totalDurationSeconds * 0.15;
+        var outroDuration = totalDurationSeconds * 0.15;
+        var middleTotalDuration = totalDurationSeconds * 0.70;
+        var middleSceneCount = sceneCount - 2;
+        var middleSceneDuration = middleTotalDuration / middleSceneCount;
+        
+        durations.Add(introDuration);
+        
+        for (int i = 0; i < middleSceneCount; i++)
+        {
+            durations.Add(middleSceneDuration);
+        }
+        
+        durations.Add(outroDuration);
+        
+        var currentSum = durations.Sum();
+        var difference = totalDurationSeconds - currentSum;
+        
+        if (Math.Abs(difference) > totalDurationSeconds * 0.05)
+        {
+            var adjustment = difference / sceneCount;
+            durations = durations.Select(d => d + adjustment).ToList();
+        }
+        
+        return durations;
+    }
+
+    /// <summary>
+    /// Determine appropriate transition type for scene.
+    /// </summary>
+    private Core.Models.Generation.TransitionType DetermineTransition(bool isLast)
+    {
+        if (isLast)
+        {
+            return Core.Models.Generation.TransitionType.Fade;
+        }
+        
+        return Core.Models.Generation.TransitionType.Cut;
     }
 }

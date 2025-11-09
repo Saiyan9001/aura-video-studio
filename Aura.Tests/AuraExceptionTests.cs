@@ -9,11 +9,11 @@ public class AuraExceptionTests
     public void ProviderException_MissingApiKey_CreatesCorrectException()
     {
         // Arrange & Act
-        var exception = ProviderException.MissingApiKey("OpenAI", "LLM", "OPENAI_API_KEY", "test-correlation");
+        var exception = ProviderException.MissingApiKey("OpenAI", ProviderType.LLM, "OPENAI_API_KEY", "test-correlation");
 
         // Assert
         Assert.Equal("OpenAI", exception.ProviderName);
-        Assert.Equal("LLM", exception.ProviderType);
+        Assert.Equal(ProviderType.LLM, exception.Type);
         Assert.Equal("test-correlation", exception.CorrelationId);
         Assert.Contains("OPENAI_API_KEY", exception.Message);
         Assert.Contains("required but not configured", exception.Message);
@@ -24,11 +24,11 @@ public class AuraExceptionTests
     public void ProviderException_RateLimited_CreatesCorrectException()
     {
         // Arrange & Act
-        var exception = ProviderException.RateLimited("OpenAI", "LLM", 60, "test-correlation");
+        var exception = ProviderException.RateLimited("OpenAI", ProviderType.LLM, 60, "test-correlation");
 
         // Assert
         Assert.Equal("OpenAI", exception.ProviderName);
-        Assert.Equal("LLM", exception.ProviderType);
+        Assert.Equal(ProviderType.LLM, exception.Type);
         Assert.Equal(429, exception.HttpStatusCode);
         Assert.True(exception.IsTransient);
         Assert.Contains("60", exception.Message);
@@ -42,11 +42,11 @@ public class AuraExceptionTests
         var innerException = new System.Net.Http.HttpRequestException("Connection failed");
 
         // Act
-        var exception = ProviderException.NetworkError("OpenAI", "LLM", "test-correlation", innerException);
+        var exception = ProviderException.NetworkError("OpenAI", ProviderType.LLM, "test-correlation", innerException);
 
         // Assert
         Assert.Equal("OpenAI", exception.ProviderName);
-        Assert.Equal("LLM", exception.ProviderType);
+        Assert.Equal(ProviderType.LLM, exception.Type);
         Assert.True(exception.IsTransient);
         Assert.Equal(innerException, exception.InnerException);
         Assert.Contains("Network error", exception.Message);
@@ -56,11 +56,11 @@ public class AuraExceptionTests
     public void ProviderException_Timeout_CreatesCorrectException()
     {
         // Arrange & Act
-        var exception = ProviderException.Timeout("OpenAI", "LLM", 30, "test-correlation");
+        var exception = ProviderException.Timeout("OpenAI", ProviderType.LLM, 30, "test-correlation");
 
         // Assert
         Assert.Equal("OpenAI", exception.ProviderName);
-        Assert.Equal("LLM", exception.ProviderType);
+        Assert.Equal(ProviderType.LLM, exception.Type);
         Assert.True(exception.IsTransient);
         Assert.Contains("30", exception.Message);
         Assert.Contains("timed out", exception.Message);
@@ -70,7 +70,7 @@ public class AuraExceptionTests
     public void ResourceException_InsufficientDiskSpace_CreatesCorrectException()
     {
         // Arrange & Act
-        var exception = ResourceException.InsufficientDiskSpace("/path/to/output", 1024 * 1024 * 100, "test-correlation");
+        var exception = ResourceException.InsufficientDiskSpace("/path/to/output", 1024L * 1024 * 100, 1024L * 1024 * 50, "test-correlation");
 
         // Assert
         Assert.Equal(ResourceType.DiskSpace, exception.ResourceType);
@@ -84,7 +84,7 @@ public class AuraExceptionTests
     public void ResourceException_InsufficientMemory_CreatesCorrectException()
     {
         // Arrange & Act
-        var exception = ResourceException.InsufficientMemory(1024 * 1024 * 500, "test-correlation");
+        var exception = ResourceException.InsufficientMemory(1024L * 1024 * 500, 1024L * 1024 * 300, "test-correlation");
 
         // Assert
         Assert.Equal(ResourceType.Memory, exception.ResourceType);
@@ -163,7 +163,7 @@ public class AuraExceptionTests
     public void AuraException_WithContext_AddsContext()
     {
         // Arrange
-        var exception = ProviderException.MissingApiKey("TestProvider", "TEST", "TEST_KEY");
+        var exception = ProviderException.MissingApiKey("TestProvider", ProviderType.LLM, "TEST_KEY");
 
         // Act
         exception.WithContext("userId", "user-123")
@@ -179,7 +179,7 @@ public class AuraExceptionTests
     public void AuraException_ToErrorResponse_ReturnsCorrectFormat()
     {
         // Arrange
-        var exception = ProviderException.RateLimited("TestProvider", "TEST", 60, "test-correlation");
+        var exception = ProviderException.RateLimited("TestProvider", ProviderType.TTS, 60, "test-correlation");
         exception.WithContext("userId", "user-123");
 
         // Act
@@ -202,10 +202,10 @@ public class AuraExceptionTests
     public void ProviderException_ErrorCode_GeneratedCorrectly()
     {
         // Arrange & Act
-        var llmException = new ProviderException("TestLLM", "LLM", "Test error");
-        var ttsException = new ProviderException("TestTTS", "TTS", "Test error");
-        var imageException = new ProviderException("TestImage", "IMAGE", "Test error");
-        var httpException = new ProviderException("TestHTTP", "LLM", "Test error", httpStatusCode: 500);
+        var llmException = new ProviderException("TestLLM", ProviderType.LLM, "Test error");
+        var ttsException = new ProviderException("TestTTS", ProviderType.TTS, "Test error");
+        var imageException = new ProviderException("TestImage", ProviderType.Visual, "Test error");
+        var httpException = new ProviderException("TestHTTP", ProviderType.LLM, "Test error", httpStatusCode: 500);
 
         // Assert
         Assert.StartsWith("E100", llmException.ErrorCode);

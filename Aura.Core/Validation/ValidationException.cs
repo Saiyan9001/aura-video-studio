@@ -11,8 +11,17 @@ namespace Aura.Core.Validation;
 public class ValidationException : AuraException
 {
     public List<string> Issues { get; }
+    
+    /// <summary>
+    /// Field-specific validation errors (field name -> error messages)
+    /// </summary>
+    public Dictionary<string, string[]> FieldErrors { get; }
 
-    public ValidationException(string message, List<string> issues, string? correlationId = null)
+    public ValidationException(
+        string message, 
+        List<string> issues, 
+        Dictionary<string, string[]>? fieldErrors = null,
+        string? correlationId = null)
         : base(
             message,
             "E001",
@@ -22,8 +31,10 @@ public class ValidationException : AuraException
             isTransient: false)
     {
         Issues = issues;
+        FieldErrors = fieldErrors ?? new Dictionary<string, string[]>();
         WithContext("issueCount", issues.Count);
         WithContext("issues", issues);
+        WithContext("fieldErrorCount", FieldErrors.Count);
     }
 
     private static string GenerateUserMessage(List<string> issues)
@@ -66,6 +77,10 @@ public class ValidationException : AuraException
     {
         var response = base.ToErrorResponse();
         response["validationIssues"] = Issues;
+        if (FieldErrors.Count > 0)
+        {
+            response["fieldErrors"] = FieldErrors;
+        }
         return response;
     }
 }

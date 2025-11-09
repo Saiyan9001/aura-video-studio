@@ -27,17 +27,17 @@ export async function validateRequiredSettings(): Promise<SettingsValidation> {
       missingSettings.push('FFmpeg');
     }
 
-    // Check default save location
+    // Check default save location - no longer required to be set, we provide a default
     const saveLocation = await getDefaultSaveLocation();
-    if (!saveLocation || !isValidPath(saveLocation)) {
-      missingSettings.push('Default Save Location');
+    if (!saveLocation) {
+      console.warn('Could not determine default save location');
     }
 
-    // If any required settings are missing, return invalid
+    // If FFmpeg is missing, return invalid (save location has defaults)
     if (missingSettings.length > 0) {
       return {
         valid: false,
-        error: `Required settings missing: ${missingSettings.join(', ')}`,
+        error: `Required software missing: ${missingSettings.join(', ')}`,
         missingSettings,
       };
     }
@@ -77,6 +77,23 @@ async function checkFFmpegStatus(): Promise<{ available: boolean; path?: string 
 }
 
 /**
+ * Get the platform-specific default save location
+ * Note: Browser cannot access actual home directory for security reasons,
+ * so we return placeholder paths that the backend will resolve properly
+ */
+function getPlatformDefaultSaveLocation(): string {
+  const platform = navigator.platform.toLowerCase();
+
+  if (platform.includes('win')) {
+    return '%USERPROFILE%\\Videos\\Aura';
+  } else if (platform.includes('mac')) {
+    return '~/Movies/Aura';
+  } else {
+    return '~/Videos/Aura';
+  }
+}
+
+/**
  * Get the configured default save location from settings
  */
 async function getDefaultSaveLocation(): Promise<string | null> {
@@ -92,16 +109,22 @@ async function getDefaultSaveLocation(): Promise<string | null> {
     }
 
     // Fall back to backend settings
-    const response = await fetch(apiUrl('/api/settings'));
+    const response = await fetch(apiUrl('/api/settings/user'));
     if (!response.ok) {
-      return null;
+      return getPlatformDefaultSaveLocation();
     }
 
     const settings = await response.json();
-    return settings.defaultSaveLocation || null;
+    const saveLocation = settings?.general?.defaultProjectSaveLocation;
+
+    if (saveLocation && isValidPath(saveLocation)) {
+      return saveLocation;
+    }
+
+    return getPlatformDefaultSaveLocation();
   } catch (error: unknown) {
     console.error('Failed to get default save location:', error);
-    return null;
+    return getPlatformDefaultSaveLocation();
   }
 }
 

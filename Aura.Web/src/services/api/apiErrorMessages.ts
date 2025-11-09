@@ -66,6 +66,16 @@ export const HTTP_ERROR_MESSAGES: Record<number, ErrorMessage> = {
     actions: ['Check all required fields', 'Ensure data is in the correct format'],
     severity: 'error',
   },
+  428: {
+    title: 'Precondition Required',
+    message: 'Required setup or configuration is missing.',
+    actions: [
+      'Complete required setup steps',
+      'Check dependencies are installed',
+      'Verify configuration is complete',
+    ],
+    severity: 'warning',
+  },
   429: {
     title: 'Too Many Requests',
     message: 'You have made too many requests. Please slow down.',

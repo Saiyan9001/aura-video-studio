@@ -1,0 +1,175 @@
+{
+  "version": "1.0",
+  "description": "Built-in demo brief templates for quick start",
+  "templates": [
+    {
+      "id": "welcome-tutorial",
+      "name": "Welcome Tutorial",
+      "category": "Tutorial",
+      "description": "A friendly introduction video for new users",
+      "icon": "Lightbulb",
+      "brief": {
+        "topic": "Welcome to Aura Video Studio",
+        "audience": "New Users",
+        "goal": "Tutorial",
+        "tone": "Friendly",
+        "language": "English",
+        "duration": 30,
+        "keyPoints": [
+          "Introduce Aura Video Studio",
+          "Show key features",
+          "Encourage users to create their first video"
+        ]
+      },
+      "settings": {
+        "aspect": "16:9",
+        "quality": "high"
+      }
+    },
+    {
+      "id": "product-demo",
+      "name": "Product Demo",
+      "category": "Marketing",
+      "description": "Showcase a product or service",
+      "icon": "ShoppingBag",
+      "brief": {
+        "topic": "Introducing Our Amazing Product",
+        "audience": "Potential Customers",
+        "goal": "Promotion",
+        "tone": "Energetic",
+        "language": "English",
+        "duration": 45,
+        "keyPoints": [
+          "Highlight unique features",
+          "Show benefits",
+          "Include call to action"
+        ]
+      },
+      "settings": {
+        "aspect": "16:9",
+        "quality": "high"
+      }
+    },
+    {
+      "id": "educational-explainer",
+      "name": "Educational Explainer",
+      "category": "Education",
+      "description": "Explain a concept or process clearly",
+      "icon": "BookOpen",
+      "brief": {
+        "topic": "How Things Work: A Simple Explanation",
+        "audience": "General Audience",
+        "goal": "Education",
+        "tone": "Informative",
+        "language": "English",
+        "duration": 60,
+        "keyPoints": [
+          "Break down complex concept",
+          "Use simple analogies",
+          "Provide clear takeaways"
+        ]
+      },
+      "settings": {
+        "aspect": "16:9",
+        "quality": "high"
+      }
+    },
+    {
+      "id": "social-media-short",
+      "name": "Social Media Short",
+      "category": "Social Media",
+      "description": "Quick engaging video for social platforms",
+      "icon": "ShareAndroid",
+      "brief": {
+        "topic": "Quick Tips and Tricks",
+        "audience": "Social Media Users",
+        "goal": "Engagement",
+        "tone": "Casual",
+        "language": "English",
+        "duration": 15,
+        "keyPoints": [
+          "Hook attention immediately",
+          "Deliver value quickly",
+          "Encourage sharing"
+        ]
+      },
+      "settings": {
+        "aspect": "9:16",
+        "quality": "high"
+      }
+    },
+    {
+      "id": "corporate-presentation",
+      "name": "Corporate Presentation",
+      "category": "Business",
+      "description": "Professional business communication",
+      "icon": "Briefcase",
+      "brief": {
+        "topic": "Company Update and Quarterly Review",
+        "audience": "Stakeholders and Team",
+        "goal": "Business Communication",
+        "tone": "Professional",
+        "language": "English",
+        "duration": 90,
+        "keyPoints": [
+          "Present key metrics",
+          "Highlight achievements",
+          "Outline future plans"
+        ]
+      },
+      "settings": {
+        "aspect": "16:9",
+        "quality": "high"
+      }
+    },
+    {
+      "id": "storytelling-narrative",
+      "name": "Storytelling Narrative",
+      "category": "Creative",
+      "description": "Tell a compelling story",
+      "icon": "BookOpen",
+      "brief": {
+        "topic": "A Story Worth Sharing",
+        "audience": "General Audience",
+        "goal": "Entertainment",
+        "tone": "Emotional",
+        "language": "English",
+        "duration": 120,
+        "keyPoints": [
+          "Establish emotional connection",
+          "Build narrative arc",
+          "Deliver satisfying conclusion"
+        ]
+      },
+      "settings": {
+        "aspect": "16:9",
+        "quality": "high"
+      }
+    },
+    {
+      "id": "quick-demo",
+      "name": "Quick Demo (Test)",
+      "category": "Testing",
+      "description": "Minimal template for quick testing",
+      "icon": "BeakerSettings",
+      "brief": {
+        "topic": "Quick Test Video",
+        "audience": "Developers",
+        "goal": "Testing",
+        "tone": "Neutral",
+        "language": "English",
+        "duration": 10,
+        "keyPoints": [
+          "Simple test content",
+          "Fast generation",
+          "Verify functionality"
+        ]
+      },
+      "settings": {
+        "aspect": "16:9",
+        "quality": "medium",
+        "useLocalResourcesOnly": true
+      }
+    }
+  ]
+}

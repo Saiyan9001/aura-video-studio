@@ -1,4 +1,5 @@
 using Aura.Core.Orchestrator;
+using Aura.Core.Services.FFmpeg;
 using Microsoft.AspNetCore.Mvc;
 using Serilog;
 
@@ -13,10 +14,12 @@ namespace Aura.Api.Controllers;
 public class QuickController : ControllerBase
 {
     private readonly QuickService _quickService;
+    private readonly IFFmpegStatusService _ffmpegStatusService;
 
-    public QuickController(QuickService quickService)
+    public QuickController(QuickService quickService, IFFmpegStatusService ffmpegStatusService)
     {
         _quickService = quickService;
+        _ffmpegStatusService = ffmpegStatusService;
     }
 
     /// <summary>
@@ -39,6 +42,51 @@ public class QuickController : ControllerBase
         {
             Log.Information("[{CorrelationId}] POST /api/quick/demo endpoint called", correlationId);
             Log.Information("[{CorrelationId}] Quick Demo requested with topic: {Topic}", correlationId, request?.Topic ?? "(default)");
+
+            // Check FFmpeg readiness before starting demo
+            var ffmpegStatus = await _ffmpegStatusService.GetStatusAsync(ct);
+            
+            if (!ffmpegStatus.Installed || 
+                !ffmpegStatus.Valid || 
+                ffmpegStatus.Version == null || 
+                !ffmpegStatus.VersionMeetsRequirement)
+            {
+                Log.Warning("[{CorrelationId}] FFmpeg not ready. Installed={Installed}, Valid={Valid}, Version={Version}, VersionMeets={VersionMeets}",
+                    correlationId, ffmpegStatus.Installed, ffmpegStatus.Valid, ffmpegStatus.Version, ffmpegStatus.VersionMeetsRequirement);
+                
+                return Conflict(new Microsoft.AspNetCore.Mvc.ProblemDetails
+                {
+                    Type = "https://docs.aura.studio/errors/E302-FFMPEG_NOT_READY",
+                    Title = "FFmpeg Not Ready",
+                    Status = 409,
+                    Detail = "FFmpeg is not properly installed or configured. Quick Demo requires a working FFmpeg installation to render videos.",
+                    Extensions =
+                    {
+                        ["correlationId"] = correlationId,
+                        ["ffmpegStatus"] = new
+                        {
+                            installed = ffmpegStatus.Installed,
+                            valid = ffmpegStatus.Valid,
+                            version = ffmpegStatus.Version,
+                            versionMeetsRequirement = ffmpegStatus.VersionMeetsRequirement,
+                            minimumVersion = ffmpegStatus.MinimumVersion,
+                            path = ffmpegStatus.Path,
+                            source = ffmpegStatus.Source,
+                            error = ffmpegStatus.Error
+                        },
+                        ["suggestedActions"] = new[]
+                        {
+                            "Install Managed FFmpeg from the Downloads page",
+                            "Verify FFmpeg is in your system PATH",
+                            "Check FFmpeg status on the Dependencies page",
+                            "Ensure FFmpeg version is 4.0 or higher"
+                        }
+                    }
+                });
+            }
+            
+            Log.Information("[{CorrelationId}] FFmpeg ready: Version={Version}, Source={Source}", 
+                correlationId, ffmpegStatus.Version, ffmpegStatus.Source);
 
             var result = await _quickService.CreateQuickDemoAsync(request?.Topic, ct);
 

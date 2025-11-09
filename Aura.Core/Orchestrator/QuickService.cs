@@ -85,7 +85,7 @@ public class QuickService
             _logger.LogInformation("[{CorrelationId}] Quick Demo render spec: {Width}x{Height} @ {Fps}fps {Codec}", 
                 correlationId, renderSpec.Res.Width, renderSpec.Res.Height, renderSpec.Fps, renderSpec.Codec);
 
-            // Create and start the job with safe defaults
+            // Create and start the job with safe defaults and mark as Quick Demo
             _logger.LogInformation("[{CorrelationId}] Creating Quick Demo job with JobRunner", correlationId);
             
             var job = await _jobRunner.CreateAndStartJobAsync(
@@ -94,6 +94,7 @@ public class QuickService
                 voiceSpec,
                 renderSpec,
                 correlationId: correlationId,
+                isQuickDemo: true,
                 ct
             );
 

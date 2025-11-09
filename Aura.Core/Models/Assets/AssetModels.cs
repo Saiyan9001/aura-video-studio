@@ -21,7 +21,8 @@ public enum AssetSource
     Uploaded,
     StockPexels,
     StockPixabay,
-    AIGenerated
+    AIGenerated,
+    Sample
 }
 
 /// <summary>

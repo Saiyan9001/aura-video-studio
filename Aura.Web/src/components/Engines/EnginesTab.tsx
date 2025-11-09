@@ -21,6 +21,7 @@ import { useEffect, useState } from 'react';
 import { useEnginesStore } from '../../state/engines';
 import { EngineCard } from './EngineCard';
 import { FFmpegCard } from './FFmpegCard';
+import { OllamaCard } from './OllamaCard';
 
 const useStyles = makeStyles({
   container: {
@@ -290,6 +291,9 @@ export function EnginesTab() {
 
       {/* FFmpeg - Special Card */}
       <FFmpegCard />
+
+      {/* Ollama - Special Card with Auto-Detection */}
+      <OllamaCard />
 
       {engines.length === 0 && !isLoading ? (
         <div className={styles.emptyState}>

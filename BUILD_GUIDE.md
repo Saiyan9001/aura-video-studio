@@ -2,6 +2,39 @@
 
 This guide provides complete instructions for setting up your development environment and building Aura Video Studio from source.
 
+## ⚠️ CRITICAL: Frontend Build Required
+
+**The frontend MUST be built before running the backend API.** Without this step, the application will display an empty page.
+
+### Quick Start (Automated)
+```bash
+# Build and deploy frontend (recommended)
+./scripts/build-frontend.sh
+
+# Then start the backend
+cd Aura.Api && dotnet run
+```
+
+### Manual Build Steps
+```bash
+# 1. Build frontend
+cd Aura.Web
+npm install
+npm run build:prod
+
+# 2. Deploy to backend
+mkdir -p ../Aura.Api/wwwroot
+cp -r dist/* ../Aura.Api/wwwroot/
+
+# 3. Start backend
+cd ../Aura.Api
+dotnet run
+```
+
+**Access the application at:** http://127.0.0.1:5005/
+
+---
+
 ## Table of Contents
 
 - [Prerequisites](#prerequisites)

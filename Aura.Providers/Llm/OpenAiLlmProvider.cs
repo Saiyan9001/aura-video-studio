@@ -1144,4 +1144,201 @@ Return ONLY the transition text, no explanations or additional commentary:";
             return null;
         }
     }
+
+    /// <summary>
+    /// Get available OpenAI models for the configured API key
+    /// Returns models filtered for chat completion (gpt and o1 models)
+    /// </summary>
+    public async Task<List<ModelInfo>> GetAvailableModelsAsync(CancellationToken ct = default)
+    {
+        _logger.LogInformation("Fetching available OpenAI models");
+
+        try
+        {
+            var requestUri = "https://api.openai.com/v1/models";
+            
+            _httpClient.DefaultRequestHeaders.Clear();
+            _httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {_apiKey}");
+
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(TimeSpan.FromSeconds(10));
+
+            var response = await _httpClient.GetAsync(requestUri, cts.Token);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("Failed to fetch models: HTTP {StatusCode}", response.StatusCode);
+                return new List<ModelInfo>();
+            }
+
+            var responseJson = await response.Content.ReadAsStringAsync(ct);
+            var responseDoc = JsonDocument.Parse(responseJson);
+
+            var models = new List<ModelInfo>();
+
+            if (responseDoc.RootElement.TryGetProperty("data", out var dataArray))
+            {
+                foreach (var model in dataArray.EnumerateArray())
+                {
+                    if (model.TryGetProperty("id", out var idProp))
+                    {
+                        var modelId = idProp.GetString();
+                        if (!string.IsNullOrEmpty(modelId))
+                        {
+                            // Filter for chat models only (models containing "gpt" or "o1")
+                            if (modelId.Contains("gpt", StringComparison.OrdinalIgnoreCase) ||
+                                modelId.Contains("o1", StringComparison.OrdinalIgnoreCase))
+                            {
+                                var created = model.TryGetProperty("created", out var createdProp)
+                                    ? createdProp.GetInt64()
+                                    : 0;
+
+                                models.Add(new ModelInfo
+                                {
+                                    Id = modelId,
+                                    Name = modelId,
+                                    Capabilities = new[] { "chat", "completion" },
+                                    Created = created
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Sort by created timestamp (newest first)
+            models = models.OrderByDescending(m => m.Created).ToList();
+
+            _logger.LogInformation("Fetched {Count} chat models successfully", models.Count);
+
+            return models;
+        }
+        catch (TaskCanceledException ex)
+        {
+            _logger.LogWarning(ex, "Request timed out while fetching models");
+            return new List<ModelInfo>();
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogWarning(ex, "Network error while fetching models");
+            return new List<ModelInfo>();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error fetching available models");
+            return new List<ModelInfo>();
+        }
+    }
+
+    /// <summary>
+    /// Validate the OpenAI API key by calling the models endpoint
+    /// Returns validation result with error details
+    /// </summary>
+    public async Task<ValidationResult> ValidateApiKeyAsync(CancellationToken ct = default)
+    {
+        _logger.LogInformation("Validating OpenAI API key");
+
+        try
+        {
+            var requestUri = "https://api.openai.com/v1/models";
+            
+            _httpClient.DefaultRequestHeaders.Clear();
+            _httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {_apiKey}");
+
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(TimeSpan.FromSeconds(10));
+
+            var response = await _httpClient.GetAsync(requestUri, cts.Token);
+
+            if (response.IsSuccessStatusCode)
+            {
+                // Get available models as part of validation
+                var models = await GetAvailableModelsAsync(ct);
+
+                _logger.LogInformation("API key validated successfully, {Count} models available", models.Count);
+
+                return new ValidationResult
+                {
+                    IsValid = true,
+                    Message = "API key is valid",
+                    AvailableModels = models
+                };
+            }
+
+            if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+            {
+                _logger.LogWarning("API key validation failed: Unauthorized");
+                return new ValidationResult
+                {
+                    IsValid = false,
+                    Message = "Invalid API key"
+                };
+            }
+
+            if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+            {
+                _logger.LogWarning("API key validation failed: Rate limited");
+                return new ValidationResult
+                {
+                    IsValid = false,
+                    Message = "Rate limit exceeded or billing issue"
+                };
+            }
+
+            _logger.LogWarning("API key validation failed: HTTP {StatusCode}", response.StatusCode);
+            return new ValidationResult
+            {
+                IsValid = false,
+                Message = $"Validation failed: HTTP {response.StatusCode}"
+            };
+        }
+        catch (TaskCanceledException ex)
+        {
+            _logger.LogWarning(ex, "API key validation timed out");
+            return new ValidationResult
+            {
+                IsValid = false,
+                Message = "Network connectivity issue"
+            };
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogWarning(ex, "Network error during API key validation");
+            return new ValidationResult
+            {
+                IsValid = false,
+                Message = "Network connectivity issue"
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error during API key validation");
+            return new ValidationResult
+            {
+                IsValid = false,
+                Message = $"Validation error: {ex.Message}"
+            };
+        }
+    }
+}
+
+/// <summary>
+/// Information about an available OpenAI model
+/// </summary>
+public class ModelInfo
+{
+    public string Id { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public string[] Capabilities { get; set; } = Array.Empty<string>();
+    public long Created { get; set; }
+}
+
+/// <summary>
+/// Result of API key validation
+/// </summary>
+public class ValidationResult
+{
+    public bool IsValid { get; set; }
+    public string Message { get; set; } = string.Empty;
+    public List<ModelInfo> AvailableModels { get; set; } = new();
 }

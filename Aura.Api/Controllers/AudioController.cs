@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Aura.Core.Models;
 using Aura.Core.Models.Audio;
 using Aura.Core.Models.Voice;
+using Aura.Core.Providers;
 using Aura.Core.Services.Audio;
 using Aura.Core.Services.AudioIntelligence;
 using Microsoft.AspNetCore.Mvc;
@@ -28,6 +29,7 @@ public class AudioController : ControllerBase
     private readonly AudioMixingService _mixingService;
     private readonly AudioContinuityService _continuityService;
     private readonly NarrationOptimizationService? _narrationOptimizationService;
+    private readonly TtsProviderFactory _ttsProviderFactory;
 
     public AudioController(
         ILogger<AudioController> logger,
@@ -37,6 +39,7 @@ public class AudioController : ControllerBase
         SoundEffectService soundEffectService,
         AudioMixingService mixingService,
         AudioContinuityService continuityService,
+        TtsProviderFactory ttsProviderFactory,
         NarrationOptimizationService? narrationOptimizationService = null)
     {
         _logger = logger;
@@ -46,7 +49,267 @@ public class AudioController : ControllerBase
         _soundEffectService = soundEffectService;
         _mixingService = mixingService;
         _continuityService = continuityService;
+        _ttsProviderFactory = ttsProviderFactory;
         _narrationOptimizationService = narrationOptimizationService;
+    }
+
+    /// <summary>
+    /// Generate audio for multiple script scenes using TTS
+    /// </summary>
+    [HttpPost("generate")]
+    public async Task<IActionResult> GenerateAudio(
+        [FromBody] GenerateAudioRequest request,
+        CancellationToken ct)
+    {
+        var correlationId = HttpContext.TraceIdentifier;
+        
+        try
+        {
+            if (request.Scenes == null || request.Scenes.Count == 0)
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    error = "At least one scene is required",
+                    correlationId
+                });
+            }
+
+            if (string.IsNullOrWhiteSpace(request.Provider))
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    error = "TTS provider is required",
+                    correlationId
+                });
+            }
+
+            if (string.IsNullOrWhiteSpace(request.VoiceName))
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    error = "Voice name is required",
+                    correlationId
+                });
+            }
+
+            _logger.LogInformation(
+                "[{CorrelationId}] Generating audio for {Count} scenes using {Provider}/{Voice}",
+                correlationId, request.Scenes.Count, request.Provider, request.VoiceName);
+
+            var ttsProvider = _ttsProviderFactory.TryCreateProvider(request.Provider);
+            
+            if (ttsProvider == null)
+            {
+                return NotFound(new
+                {
+                    success = false,
+                    error = $"TTS provider '{request.Provider}' not found or not available",
+                    correlationId
+                });
+            }
+
+            var scriptLines = request.Scenes.Select(s => new ScriptLine(
+                SceneIndex: s.SceneIndex,
+                Text: s.Text,
+                Start: TimeSpan.FromSeconds(s.StartSeconds),
+                Duration: TimeSpan.FromSeconds(s.DurationSeconds)
+            )).ToList();
+
+            var voiceSpec = new VoiceSpec(
+                VoiceName: request.VoiceName,
+                Rate: request.Rate ?? 1.0,
+                Pitch: request.Pitch ?? 0.0,
+                Pause: Enum.TryParse<PauseStyle>(request.PauseStyle, out var pauseStyle) 
+                    ? pauseStyle 
+                    : PauseStyle.Natural
+            );
+
+            var results = new List<object>();
+            var failedScenes = new List<object>();
+
+            for (int i = 0; i < scriptLines.Count; i++)
+            {
+                try
+                {
+                    var scene = request.Scenes[i];
+                    var line = scriptLines[i];
+                    
+                    _logger.LogInformation(
+                        "[{CorrelationId}] Generating audio for scene {SceneIndex}: {Text}",
+                        correlationId, scene.SceneIndex, scene.Text.Substring(0, Math.Min(50, scene.Text.Length)));
+
+                    var audioPath = await ttsProvider.SynthesizeAsync(new[] { line }, voiceSpec, ct);
+                    
+                    results.Add(new
+                    {
+                        sceneIndex = scene.SceneIndex,
+                        audioPath,
+                        duration = scene.DurationSeconds,
+                        success = true
+                    });
+                }
+                catch (Exception ex)
+                {
+                    var scene = request.Scenes[i];
+                    _logger.LogError(ex, 
+                        "[{CorrelationId}] Failed to generate audio for scene {SceneIndex}",
+                        correlationId, scene.SceneIndex);
+                    
+                    failedScenes.Add(new
+                    {
+                        sceneIndex = scene.SceneIndex,
+                        error = ex.Message
+                    });
+                    
+                    results.Add(new
+                    {
+                        sceneIndex = scene.SceneIndex,
+                        audioPath = (string?)null,
+                        duration = scene.DurationSeconds,
+                        success = false,
+                        error = ex.Message
+                    });
+                }
+            }
+
+            var allSucceeded = failedScenes.Count == 0;
+            var statusCode = allSucceeded ? 200 : (results.Count > failedScenes.Count ? 207 : 500);
+
+            _logger.LogInformation(
+                "[{CorrelationId}] Audio generation complete: {Success}/{Total} scenes succeeded",
+                correlationId, results.Count - failedScenes.Count, results.Count);
+
+            return StatusCode(statusCode, new
+            {
+                success = allSucceeded,
+                results,
+                failedScenes,
+                totalScenes = results.Count,
+                successfulScenes = results.Count - failedScenes.Count,
+                failedCount = failedScenes.Count,
+                correlationId
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "[{CorrelationId}] Error generating audio", correlationId);
+            return StatusCode(500, new
+            {
+                success = false,
+                error = "Failed to generate audio",
+                details = ex.Message,
+                correlationId
+            });
+        }
+    }
+
+    /// <summary>
+    /// Regenerate audio for a single scene
+    /// </summary>
+    [HttpPost("regenerate")]
+    public async Task<IActionResult> RegenerateAudio(
+        [FromBody] RegenerateAudioRequest request,
+        CancellationToken ct)
+    {
+        var correlationId = HttpContext.TraceIdentifier;
+        
+        try
+        {
+            if (string.IsNullOrWhiteSpace(request.Text))
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    error = "Scene text is required",
+                    correlationId
+                });
+            }
+
+            if (string.IsNullOrWhiteSpace(request.Provider))
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    error = "TTS provider is required",
+                    correlationId
+                });
+            }
+
+            if (string.IsNullOrWhiteSpace(request.VoiceName))
+            {
+                return BadRequest(new
+                {
+                    success = false,
+                    error = "Voice name is required",
+                    correlationId
+                });
+            }
+
+            _logger.LogInformation(
+                "[{CorrelationId}] Regenerating audio for scene {SceneIndex} using {Provider}/{Voice}",
+                correlationId, request.SceneIndex, request.Provider, request.VoiceName);
+
+            var ttsProvider = _ttsProviderFactory.TryCreateProvider(request.Provider);
+            
+            if (ttsProvider == null)
+            {
+                return NotFound(new
+                {
+                    success = false,
+                    error = $"TTS provider '{request.Provider}' not found or not available",
+                    correlationId
+                });
+            }
+
+            var scriptLine = new ScriptLine(
+                SceneIndex: request.SceneIndex,
+                Text: request.Text,
+                Start: TimeSpan.FromSeconds(request.StartSeconds),
+                Duration: TimeSpan.FromSeconds(request.DurationSeconds)
+            );
+
+            var voiceSpec = new VoiceSpec(
+                VoiceName: request.VoiceName,
+                Rate: request.Rate ?? 1.0,
+                Pitch: request.Pitch ?? 0.0,
+                Pause: Enum.TryParse<PauseStyle>(request.PauseStyle, out var pauseStyle) 
+                    ? pauseStyle 
+                    : PauseStyle.Natural
+            );
+
+            var audioPath = await ttsProvider.SynthesizeAsync(new[] { scriptLine }, voiceSpec, ct);
+
+            _logger.LogInformation(
+                "[{CorrelationId}] Audio regeneration complete for scene {SceneIndex}",
+                correlationId, request.SceneIndex);
+
+            return Ok(new
+            {
+                success = true,
+                sceneIndex = request.SceneIndex,
+                audioPath,
+                duration = request.DurationSeconds,
+                correlationId
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, 
+                "[{CorrelationId}] Failed to regenerate audio for scene {SceneIndex}",
+                correlationId, request.SceneIndex);
+            
+            return StatusCode(500, new
+            {
+                success = false,
+                error = "Failed to regenerate audio",
+                details = ex.Message,
+                sceneIndex = request.SceneIndex,
+                correlationId
+            });
+        }
     }
 
     /// <summary>
@@ -667,3 +930,28 @@ public record OptimizationConfigDto(
     bool? EnableAcronymClarification = null,
     bool? EnableNumberSpelling = null,
     bool? EnableHomographDisambiguation = null);
+
+public record GenerateAudioRequest(
+    List<AudioSceneDto> Scenes,
+    string Provider,
+    string VoiceName,
+    double? Rate = null,
+    double? Pitch = null,
+    string? PauseStyle = null);
+
+public record AudioSceneDto(
+    int SceneIndex,
+    string Text,
+    double StartSeconds,
+    double DurationSeconds);
+
+public record RegenerateAudioRequest(
+    int SceneIndex,
+    string Text,
+    double StartSeconds,
+    double DurationSeconds,
+    string Provider,
+    string VoiceName,
+    double? Rate = null,
+    double? Pitch = null,
+    string? PauseStyle = null);

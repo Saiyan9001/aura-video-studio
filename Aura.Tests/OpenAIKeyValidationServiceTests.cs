@@ -157,7 +157,7 @@ public class OpenAIKeyValidationServiceTests : IDisposable
 
         // Assert
         Assert.False(result.IsValid);
-        Assert.Equal("Unauthorized", result.Status);
+        Assert.Equal("Invalid", result.Status);
         Assert.Contains("Invalid authentication", result.Message);
         Assert.True(result.FormatValid);
         Assert.True(result.NetworkCheckPassed);
@@ -165,7 +165,7 @@ public class OpenAIKeyValidationServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task ValidateKeyAsync_WithForbiddenKey_ReturnsForbidden()
+    public async Task ValidateKeyAsync_WithForbiddenKey_ReturnsPermissionDenied()
     {
         // Arrange
         var restrictedKey = "sk-1234567890abcdefghijklmnopqrstuvwxyz";
@@ -187,11 +187,87 @@ public class OpenAIKeyValidationServiceTests : IDisposable
 
         // Assert
         Assert.False(result.IsValid);
-        Assert.Equal("Forbidden", result.Status);
+        Assert.Equal("PermissionDenied", result.Status);
         Assert.Contains("Project not found", result.Message);
         Assert.True(result.FormatValid);
         Assert.True(result.NetworkCheckPassed);
         Assert.Equal(403, result.HttpStatusCode);
+    }
+
+    [Fact]
+    public async Task ValidateKeyAsync_WithRateLimitedKey_ReturnsRateLimitedButValid()
+    {
+        // Arrange
+        var validKey = "sk-1234567890abcdefghijklmnopqrstuvwxyz";
+        
+        _mockHttpMessageHandler
+            .Protected()
+            .Setup<Task<HttpResponseMessage>>(
+                "SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>())
+            .ReturnsAsync(new HttpResponseMessage
+            {
+                StatusCode = HttpStatusCode.TooManyRequests,
+                Content = new StringContent("{\"error\": {\"message\": \"Rate limit exceeded\"}}")
+            });
+
+        // Act
+        var result = await _service.ValidateKeyAsync(validKey);
+
+        // Assert
+        Assert.True(result.IsValid); // Key is valid, just rate limited
+        Assert.Equal("RateLimited", result.Status);
+        Assert.Contains("Rate limit", result.Message);
+        Assert.True(result.FormatValid);
+        Assert.True(result.NetworkCheckPassed);
+        Assert.Equal(429, result.HttpStatusCode);
+        Assert.Equal("RateLimited", result.ErrorType);
+    }
+
+    [Fact]
+    public async Task ValidateKeyAsync_WithServiceError_ReturnsServiceIssue()
+    {
+        // Arrange
+        var validKey = "sk-1234567890abcdefghijklmnopqrstuvwxyz";
+        
+        _mockHttpMessageHandler
+            .Protected()
+            .Setup<Task<HttpResponseMessage>>(
+                "SendAsync",
+                ItExpr.IsAny<HttpRequestMessage>(),
+                ItExpr.IsAny<CancellationToken>())
+            .ReturnsAsync(new HttpResponseMessage
+            {
+                StatusCode = HttpStatusCode.ServiceUnavailable,
+                Content = new StringContent("{\"error\": {\"message\": \"Service temporarily unavailable\"}}")
+            });
+
+        // Act
+        var result = await _service.ValidateKeyAsync(validKey);
+
+        // Assert
+        Assert.False(result.IsValid); // Service issue, can't confirm validity
+        Assert.Equal("ServiceIssue", result.Status);
+        Assert.Contains("Service temporarily unavailable", result.Message);
+        Assert.True(result.FormatValid);
+        Assert.True(result.NetworkCheckPassed);
+        Assert.Equal(503, result.HttpStatusCode);
+        Assert.Equal("ServiceError", result.ErrorType);
+    }
+
+    [Fact]
+    public void ValidateKeyFormat_WithLiveKey_ReturnsTrue()
+    {
+        // Arrange
+        var validKey = "sk-live-1234567890abcdefghijklmnopqrstuvwxyz";
+
+        // Act
+        var (isValid, message) = _service.ValidateKeyFormat(validKey);
+
+        // Assert
+        Assert.True(isValid);
+        Assert.Contains("Format looks correct", message);
     }
 
     [Fact]

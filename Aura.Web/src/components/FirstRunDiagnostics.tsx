@@ -191,6 +191,8 @@ export function FirstRunDiagnostics({
     }
   };
 
+  const isFirstRunOnboarding = result?.status === 'needs-setup' && result?.issues?.length === 0;
+
   const handleFixAction = (action: DiagnosticIssue['fixActions'][0]) => {
     switch (action.actionType) {
       case 'navigate':
@@ -266,6 +268,17 @@ export function FirstRunDiagnostics({
                     }}
                   />
                   All systems ready! You can start creating videos.
+                </>
+              ) : isFirstRunOnboarding ? (
+                <>
+                  <Info24Regular
+                    style={{
+                      verticalAlign: 'middle',
+                      marginRight: '4px',
+                      color: tokens.colorBrandForeground1,
+                    }}
+                  />
+                  First-time run detected. Setup required.
                 </>
               ) : (
                 <>

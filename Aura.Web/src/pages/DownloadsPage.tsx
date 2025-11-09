@@ -684,13 +684,13 @@ export function DownloadsPage() {
                         color: tokens.colorNeutralForeground3,
                       }}
                     >
-                      Complete the onboarding wizard to set up dependencies, or configure them
-                      manually in Settings.
+                      Complete the setup wizard to configure dependencies, or set them up manually
+                      in Settings.
                     </Text>
                   </div>
                   <div className={styles.emptyStateActions}>
-                    <Button appearance="primary" onClick={() => navigate('/onboarding')}>
-                      Launch Onboarding
+                    <Button appearance="primary" onClick={() => navigate('/setup')}>
+                      Launch Setup Wizard
                     </Button>
                     <Button
                       appearance="subtle"

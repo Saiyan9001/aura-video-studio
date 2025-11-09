@@ -1,6 +1,33 @@
 using System;
+using System.Collections.Generic;
 
 namespace Aura.Core.Errors;
+
+/// <summary>
+/// Types of providers in the system
+/// </summary>
+public enum ProviderType
+{
+    LLM,
+    TTS,
+    Visual,
+    Rendering
+}
+
+/// <summary>
+/// Common error codes for provider failures
+/// </summary>
+public static class ProviderErrorCode
+{
+    public const string RateLimit = "RATE_LIMIT";
+    public const string AuthFailed = "AUTH_FAILED";
+    public const string Timeout = "TIMEOUT";
+    public const string NetworkError = "NETWORK_ERROR";
+    public const string InvalidInput = "INVALID_INPUT";
+    public const string ServiceUnavailable = "SERVICE_UNAVAILABLE";
+    public const string QuotaExceeded = "QUOTA_EXCEEDED";
+    public const string Unknown = "UNKNOWN";
+}
 
 /// <summary>
 /// Exception thrown when a provider (LLM, TTS, Image, etc.) encounters an error
@@ -13,9 +40,14 @@ public class ProviderException : AuraException
     public string ProviderName { get; }
 
     /// <summary>
-    /// Type of provider (LLM, TTS, Image, Video)
+    /// Type of provider (LLM, TTS, Visual, Rendering)
     /// </summary>
-    public string ProviderType { get; }
+    public ProviderType Type { get; }
+
+    /// <summary>
+    /// Specific error code for categorizing the failure
+    /// </summary>
+    public string SpecificErrorCode { get; }
 
     /// <summary>
     /// HTTP status code if the error occurred during an API call
@@ -24,8 +56,9 @@ public class ProviderException : AuraException
 
     public ProviderException(
         string providerName,
-        string providerType,
+        ProviderType type,
         string message,
+        string? specificErrorCode = null,
         string? userMessage = null,
         string? correlationId = null,
         int? httpStatusCode = null,
@@ -34,46 +67,48 @@ public class ProviderException : AuraException
         Exception? innerException = null)
         : base(
             message,
-            GenerateErrorCode(providerType, httpStatusCode),
-            userMessage ?? GenerateUserMessage(providerName, providerType, message),
+            GenerateErrorCode(type, httpStatusCode),
+            userMessage ?? GenerateUserMessage(providerName, type, message),
             correlationId,
-            suggestedActions ?? GenerateDefaultSuggestedActions(providerType, isTransient),
+            suggestedActions ?? GenerateDefaultSuggestedActions(type, isTransient),
             isTransient,
             innerException)
     {
         ProviderName = providerName;
-        ProviderType = providerType;
+        Type = type;
+        SpecificErrorCode = specificErrorCode ?? ProviderErrorCode.Unknown;
         HttpStatusCode = httpStatusCode;
 
         // Add provider context
         WithContext("providerName", providerName);
-        WithContext("providerType", providerType);
+        WithContext("providerType", type.ToString());
+        WithContext("specificErrorCode", SpecificErrorCode);
         if (httpStatusCode.HasValue)
         {
             WithContext("httpStatusCode", httpStatusCode.Value);
         }
     }
 
-    private static string GenerateErrorCode(string providerType, int? httpStatusCode)
+    private static string GenerateErrorCode(ProviderType providerType, int? httpStatusCode)
     {
-        var baseCode = providerType.ToUpperInvariant() switch
+        var baseCode = providerType switch
         {
-            "LLM" => "E100",
-            "TTS" => "E200",
-            "IMAGE" => "E400",
-            "VIDEO" => "E500",
+            ProviderType.LLM => "E100",
+            ProviderType.TTS => "E200",
+            ProviderType.Visual => "E400",
+            ProviderType.Rendering => "E500",
             _ => "E900"
         };
 
         return httpStatusCode.HasValue ? $"{baseCode}-{httpStatusCode}" : baseCode;
     }
 
-    private static string GenerateUserMessage(string providerName, string providerType, string message)
+    private static string GenerateUserMessage(string providerName, ProviderType providerType, string message)
     {
         return $"{providerType} provider '{providerName}' encountered an error: {message}";
     }
 
-    private static string[] GenerateDefaultSuggestedActions(string providerType, bool isTransient)
+    private static string[] GenerateDefaultSuggestedActions(ProviderType providerType, bool isTransient)
     {
         if (isTransient)
         {
@@ -98,12 +133,13 @@ public class ProviderException : AuraException
     /// <summary>
     /// Creates a ProviderException for missing API key
     /// </summary>
-    public static ProviderException MissingApiKey(string providerName, string providerType, string keyName, string? correlationId = null)
+    public static ProviderException MissingApiKey(string providerName, ProviderType providerType, string keyName, string? correlationId = null)
     {
         return new ProviderException(
             providerName,
             providerType,
             $"API key '{keyName}' is required but not configured",
+            ProviderErrorCode.AuthFailed,
             $"{providerName} requires an API key to function. Please configure '{keyName}' in Settings → Providers.",
             correlationId,
             suggestedActions: new[]
@@ -117,7 +153,7 @@ public class ProviderException : AuraException
     /// <summary>
     /// Creates a ProviderException for API rate limiting
     /// </summary>
-    public static ProviderException RateLimited(string providerName, string providerType, int? retryAfterSeconds = null, string? correlationId = null)
+    public static ProviderException RateLimited(string providerName, ProviderType providerType, int? retryAfterSeconds = null, string? correlationId = null)
     {
         var message = retryAfterSeconds.HasValue
             ? $"Rate limit exceeded. Retry after {retryAfterSeconds} seconds."
@@ -131,6 +167,7 @@ public class ProviderException : AuraException
             providerName,
             providerType,
             message,
+            ProviderErrorCode.RateLimit,
             $"{providerName} rate limit exceeded. Please wait before retrying.",
             correlationId,
             httpStatusCode: 429,
@@ -141,12 +178,13 @@ public class ProviderException : AuraException
     /// <summary>
     /// Creates a ProviderException for network/connection errors
     /// </summary>
-    public static ProviderException NetworkError(string providerName, string providerType, string? correlationId = null, Exception? innerException = null)
+    public static ProviderException NetworkError(string providerName, ProviderType providerType, string? correlationId = null, Exception? innerException = null)
     {
         return new ProviderException(
             providerName,
             providerType,
             "Network error communicating with provider",
+            ProviderErrorCode.NetworkError,
             $"Unable to connect to {providerName}. Please check your internet connection.",
             correlationId,
             isTransient: true,
@@ -163,12 +201,13 @@ public class ProviderException : AuraException
     /// <summary>
     /// Creates a ProviderException for timeout errors
     /// </summary>
-    public static ProviderException Timeout(string providerName, string providerType, int timeoutSeconds, string? correlationId = null)
+    public static ProviderException Timeout(string providerName, ProviderType providerType, int timeoutSeconds, string? correlationId = null)
     {
         return new ProviderException(
             providerName,
             providerType,
             $"Provider request timed out after {timeoutSeconds} seconds",
+            ProviderErrorCode.Timeout,
             $"{providerName} took too long to respond. The operation timed out.",
             correlationId,
             isTransient: true,
@@ -187,7 +226,8 @@ public class ProviderException : AuraException
         response["provider"] = new
         {
             name = ProviderName,
-            type = ProviderType
+            type = Type.ToString(),
+            errorCode = SpecificErrorCode
         };
         return response;
     }

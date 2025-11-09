@@ -10,6 +10,8 @@ import { ContentPlanningDashboard } from './components/contentPlanning/ContentPl
 import { QualityDashboard } from './components/dashboard';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { GlobalStatusFooter } from './components/GlobalStatusFooter';
+import { InitializationScreen, StartupErrorScreen } from './components/Initialization';
+import type { InitializationError } from './components/Initialization';
 import { JobProgressDrawer } from './components/JobProgressDrawer';
 import { KeyboardShortcutsPanel } from './components/KeyboardShortcuts/KeyboardShortcutsPanel';
 import { KeyboardShortcutsModal } from './components/KeyboardShortcutsModal';
@@ -18,6 +20,7 @@ import { NotificationsToaster } from './components/Notifications/Toasts';
 import { PlatformDashboard } from './components/Platform';
 import { JobStatusBar } from './components/StatusBar/JobStatusBar';
 import { ActionHistoryPanel } from './components/UndoRedo/ActionHistoryPanel';
+import { VideoCreationWizard } from './components/VideoWizard/VideoCreationWizard';
 import { env } from './config/env';
 import { useGlobalUndoShortcuts } from './hooks/useGlobalUndoShortcuts';
 import { AestheticsPage } from './pages/Aesthetics/AestheticsPage';
@@ -49,7 +52,6 @@ import RagDocumentManager from './pages/RAG/RagDocumentManager';
 import { RecentJobsPage } from './pages/RecentJobsPage';
 import { RenderPage } from './pages/RenderPage';
 import { SettingsPage } from './pages/SettingsPage';
-import { SetupWizard } from './pages/Setup/SetupWizard';
 import CustomTemplatesPage from './pages/Templates/CustomTemplatesPage';
 import TemplatesLibrary from './pages/Templates/TemplatesLibrary';
 import ValidationPage from './pages/Validation/ValidationPage';
@@ -58,8 +60,13 @@ import { VideoEditorPage } from './pages/VideoEditorPage';
 import VoiceEnhancementPage from './pages/VoiceEnhancement/VoiceEnhancementPage';
 import { WelcomePage } from './pages/WelcomePage';
 import { CreateWizard } from './pages/Wizard/CreateWizard';
+import { setupApi } from './services/api/setupApi';
 import { errorReportingService } from './services/errorReportingService';
-import { hasCompletedFirstRun, migrateLegacyFirstRunStatus } from './services/firstRunService';
+import {
+  hasCompletedFirstRun,
+  migrateLegacyFirstRunStatus,
+  markFirstRunCompleted,
+} from './services/firstRunService';
 import { healthMonitorService } from './services/healthMonitorService';
 import { keyboardShortcutManager } from './services/keyboardShortcutManager';
 import { loggingService } from './services/loggingService';
@@ -70,6 +77,9 @@ import { useJobState } from './state/jobState';
 // Lazy load development-only features to reduce production bundle size
 const LogViewerPage = lazy(() =>
   import('./pages/LogViewerPage').then((m) => ({ default: m.LogViewerPage }))
+);
+const DiagnosticDashboardPage = lazy(() =>
+  import('./pages/DiagnosticDashboardPage').then((m) => ({ default: m.DiagnosticDashboardPage }))
 );
 const ActivityDemoPage = lazy(() =>
   import('./pages/ActivityDemoPage').then((m) => ({ default: m.ActivityDemoPage }))
@@ -106,16 +116,16 @@ function App() {
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [showShortcutsPanel, setShowShortcutsPanel] = useState(false);
   const [showCommandPalette, setShowCommandPalette] = useState(false);
-  const toasterId = 'notifications-toaster'; // Hardcoded to avoid hook context issues
+  const toasterId = 'notifications-toaster';
 
-  // Initialize global undo/redo shortcuts
   useGlobalUndoShortcuts();
 
-  // First-run detection state
   const [isCheckingFirstRun, setIsCheckingFirstRun] = useState(true);
   const [shouldShowOnboarding, setShouldShowOnboarding] = useState(false);
 
-  // Job state for status bar
+  const [isInitializing, setIsInitializing] = useState(true);
+  const [initializationError, setInitializationError] = useState<InitializationError | null>(null);
+
   const { currentJobId, status, progress, message } = useJobState();
   const [showDrawer, setShowDrawer] = useState(false);
 
@@ -129,7 +139,42 @@ function App() {
         // Migrate settings if needed (e.g., placeholder paths)
         await migrateSettingsIfNeeded();
 
-        // Check if user has completed first-run wizard
+        // Check system setup status from backend (primary source of truth)
+        try {
+          const systemStatus = await setupApi.getSystemStatus();
+          if (!systemStatus.isComplete) {
+            // Backend says setup is not complete - clear any stale localStorage flags
+            localStorage.removeItem('hasCompletedFirstRun');
+            localStorage.removeItem('hasSeenOnboarding');
+            
+            setShouldShowOnboarding(true);
+            setIsCheckingFirstRun(false);
+            return;
+          } else {
+            // Backend says setup IS complete - ensure localStorage is synced
+            localStorage.setItem('hasCompletedFirstRun', 'true');
+          }
+        } catch (error) {
+          console.warn(
+            'Could not check system setup status, falling back to user wizard status:',
+            error
+          );
+          
+          // If backend check fails, fall back to localStorage but be cautious
+          // If we can't reach the backend, don't force the wizard unnecessarily
+          const localStatus =
+            localStorage.getItem('hasCompletedFirstRun') === 'true' ||
+            localStorage.getItem('hasSeenOnboarding') === 'true';
+          
+          if (!localStatus) {
+            // No local completion flag and can't reach backend - assume first run
+            setShouldShowOnboarding(true);
+            setIsCheckingFirstRun(false);
+            return;
+          }
+        }
+
+        // Check if user has completed first-run wizard (secondary check)
         const completed = await hasCompletedFirstRun();
         setShouldShowOnboarding(!completed);
       } catch (error) {
@@ -236,6 +281,24 @@ function App() {
         },
       },
       {
+        id: 'open-ideation',
+        keys: 'Ctrl+I',
+        description: 'Open Ideation',
+        context: 'global',
+        handler: () => {
+          window.location.href = '/ideation';
+        },
+      },
+      {
+        id: 'open-editor',
+        keys: 'Ctrl+E',
+        description: 'Open Video Editor',
+        context: 'global',
+        handler: () => {
+          window.location.href = '/editor';
+        },
+      },
+      {
         id: 'save-project',
         keys: 'Ctrl+S',
         description: 'Save Project',
@@ -313,8 +376,13 @@ function App() {
         e.preventDefault();
         window.location.href = '/logs';
       }
-      // Ctrl+K or Cmd+K for shortcuts panel (preferred)
+      // Ctrl+K or Cmd+K for command palette
       else if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        setShowCommandPalette(true);
+      }
+      // Ctrl+Shift+K for shortcuts panel (alternative)
+      else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'K') {
         e.preventDefault();
         setShowShortcutsPanel(true);
       }
@@ -326,7 +394,7 @@ function App() {
           setShowShortcutsPanel(true);
         }
       }
-      // Ctrl+P or Cmd+P for command palette
+      // Ctrl+P or Cmd+P for quick open (alternative)
       else if ((e.ctrlKey || e.metaKey) && e.key === 'p') {
         e.preventDefault();
         setShowCommandPalette(true);
@@ -394,6 +462,57 @@ function App() {
     );
   }
 
+  if (shouldShowOnboarding) {
+    return (
+      <QueryClientProvider client={queryClient}>
+        <ThemeContext.Provider value={{ isDarkMode, toggleTheme }}>
+          <FluentProvider theme={isDarkMode ? webDarkTheme : webLightTheme}>
+            <BrowserRouter>
+              <FirstRunWizard
+                onComplete={async () => {
+                  setShouldShowOnboarding(false);
+                  await markFirstRunCompleted();
+                }}
+              />
+            </BrowserRouter>
+          </FluentProvider>
+        </ThemeContext.Provider>
+      </QueryClientProvider>
+    );
+  }
+
+  if (isInitializing && !initializationError) {
+    return (
+      <ThemeContext.Provider value={{ isDarkMode, toggleTheme }}>
+        <FluentProvider theme={isDarkMode ? webDarkTheme : webLightTheme}>
+          <InitializationScreen
+            onComplete={() => setIsInitializing(false)}
+            onError={(error) => setInitializationError(error)}
+            enableSafeMode={true}
+          />
+        </FluentProvider>
+      </ThemeContext.Provider>
+    );
+  }
+
+  if (initializationError) {
+    return (
+      <ThemeContext.Provider value={{ isDarkMode, toggleTheme }}>
+        <FluentProvider theme={isDarkMode ? webDarkTheme : webLightTheme}>
+          <StartupErrorScreen
+            error={initializationError}
+            onRetry={() => {
+              setInitializationError(null);
+              setIsInitializing(true);
+            }}
+            enableSafeMode={true}
+            enableOfflineMode={true}
+          />
+        </FluentProvider>
+      </ThemeContext.Provider>
+    );
+  }
+
   return (
     <QueryClientProvider client={queryClient}>
       <ThemeContext.Provider value={{ isDarkMode, toggleTheme }}>
@@ -412,28 +531,19 @@ function App() {
                   <ErrorBoundary>
                     <ConfigurationGate>
                       <Routes>
-                        {/* First-run onboarding route - highest priority */}
-                        <Route path="/onboarding" element={<FirstRunWizard />} />
+                        {/* Setup wizard - unified entry point for first-run and reconfiguration */}
+                        <Route path="/setup" element={<FirstRunWizard />} />
+                        {/* Legacy route redirect for backward compatibility */}
+                        <Route path="/onboarding" element={<Navigate to="/setup" replace />} />
 
-                        {/* Redirect to onboarding if first run */}
-                        <Route
-                          path="/"
-                          element={
-                            shouldShowOnboarding ? (
-                              <Navigate to="/onboarding" replace />
-                            ) : (
-                              <WelcomePage />
-                            )
-                          }
-                        />
-
-                        {/* All other routes */}
-                        <Route path="/setup" element={<SetupWizard />} />
+                        {/* Main routes */}
+                        <Route path="/" element={<WelcomePage />} />
                         <Route path="/dashboard" element={<DashboardPage />} />
                         <Route path="/ideation" element={<IdeationDashboard />} />
                         <Route path="/trending" element={<TrendingTopicsExplorer />} />
                         <Route path="/content-planning" element={<ContentPlanningDashboard />} />
                         <Route path="/create" element={<CreateWizard />} />
+                        <Route path="/create/new" element={<VideoCreationWizard />} />
                         <Route path="/create/legacy" element={<CreatePage />} />
                         <Route path="/templates" element={<TemplatesLibrary />} />
                         <Route path="/templates/custom" element={<CustomTemplatesPage />} />
@@ -469,6 +579,15 @@ function App() {
                         <Route path="/quality-validation" element={<QualityValidationPage />} />
                         <Route path="/validation" element={<ValidationPage />} />
                         <Route path="/verification" element={<VerificationPage />} />
+                        {/* Diagnostics and system information */}
+                        <Route
+                          path="/diagnostics"
+                          element={
+                            <Suspense fallback={<Spinner label="Loading..." />}>
+                              <DiagnosticDashboardPage />
+                            </Suspense>
+                          }
+                        />
                         {/* Logs page - always available for diagnostics */}
                         <Route
                           path="/logs"

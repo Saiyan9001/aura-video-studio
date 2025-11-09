@@ -9,6 +9,7 @@ import { Spinner, MessageBar, MessageBarBody, Button } from '@fluentui/react-com
 import { Warning24Regular } from '@fluentui/react-icons';
 import { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import { setupApi } from '../services/api/setupApi';
 import { hasCompletedFirstRun } from '../services/firstRunService';
 import { validateRequiredSettings } from '../services/settingsValidationService';
 
@@ -19,7 +20,7 @@ interface ConfigurationGateProps {
 /**
  * Routes that don't require configuration to be complete
  */
-const ALLOWED_ROUTES = ['/onboarding', '/setup', '/settings', '/logs', '/health'];
+const ALLOWED_ROUTES = ['/setup', '/settings', '/logs', '/health'];
 
 /**
  * Check if a route is allowed without setup completion
@@ -45,12 +46,24 @@ export function ConfigurationGate({ children }: ConfigurationGateProps) {
       }
 
       try {
-        // Check if first-run is complete
+        // Check system setup status from backend (primary check)
+        try {
+          const systemStatus = await setupApi.getSystemStatus();
+          if (!systemStatus.isComplete) {
+            // Redirect to setup wizard - system setup not complete
+            navigate('/setup', { replace: true });
+            return;
+          }
+        } catch (error) {
+          console.warn('Could not check system setup status, falling back to local check:', error);
+        }
+
+        // Check if first-run is complete (secondary check for backward compatibility)
         const firstRunComplete = await hasCompletedFirstRun();
 
         if (!firstRunComplete) {
-          // Redirect to onboarding
-          navigate('/onboarding', { replace: true });
+          // Redirect to setup wizard
+          navigate('/setup', { replace: true });
           return;
         }
 

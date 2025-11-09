@@ -20,6 +20,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useJobsStore } from '../../state/jobs';
 import { openLogsFolder } from '../../utils/apiErrorHandler';
+import { openFile, openFolder } from '../../utils/fileSystemUtils';
 import { useNotifications } from '../Notifications/Toasts';
 import { FailureModal } from './FailureModal';
 
@@ -152,22 +153,36 @@ export function GenerationPanel({ jobId, onClose }: GenerationPanelProps) {
           ? formatDuration(activeJob.startedAt, activeJob.finishedAt)
           : '';
 
-      const firstArtifact = activeJob.artifacts[0];
+      const outputPath = activeJob.outputPath;
 
-      showSuccessToast({
-        title: 'Render complete',
-        message: `Your video has been generated successfully!`,
-        duration,
-        onViewResults: () => {
-          navigate('/projects');
-          onClose();
-        },
-        onOpenFolder: firstArtifact
-          ? () => {
-              openFolder(firstArtifact.path);
-            }
-          : undefined,
-      });
+      if (outputPath) {
+        showSuccessToast({
+          title: 'Render complete',
+          message: `Your video has been generated successfully!`,
+          duration,
+          outputPath,
+          onOpenFile: () => {
+            openFile(outputPath);
+          },
+          onOpenFolder: () => {
+            openFolder(outputPath);
+          },
+          onViewResults: () => {
+            navigate('/projects');
+            onClose();
+          },
+        });
+      } else {
+        showSuccessToast({
+          title: 'Render complete',
+          message: `Your video has been generated successfully!`,
+          duration,
+          onViewResults: () => {
+            navigate('/projects');
+            onClose();
+          },
+        });
+      }
       setNotificationShown(true);
     } else if (activeJob.status === 'Failed') {
       // Fetch detailed failure information
@@ -207,12 +222,6 @@ export function GenerationPanel({ jobId, onClose }: GenerationPanelProps) {
     const minutes = Math.floor(diffMs / 60000);
     const seconds = Math.floor((diffMs % 60000) / 1000);
     return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-  };
-
-  const openFolder = (artifactPath: string) => {
-    // Extract directory from artifact path
-    const dirPath = artifactPath.substring(0, artifactPath.lastIndexOf('/'));
-    window.open(`file:///${dirPath.replace(/\\/g, '/')}`);
   };
 
   if (!activeJob) {

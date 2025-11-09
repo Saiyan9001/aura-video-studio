@@ -1,8 +1,10 @@
 using System;
 using System.IO;
+using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using Aura.Api.Controllers;
+using Aura.Api.Models;
 using Aura.Core.Configuration;
 using Aura.Core.Models;
 using Aura.Core.Services;
@@ -23,7 +25,7 @@ public class SettingsControllerSecureStorageTests : IDisposable
 {
     private readonly Mock<ILogger<SettingsController>> _mockLogger;
     private readonly Mock<ILogger<SecureStorageService>> _mockSecureLogger;
-    private readonly Mock<ProviderSettings> _mockProviderSettings;
+    private readonly ProviderSettings _providerSettings;
     private readonly ISecureStorageService _secureStorage;
     private readonly SettingsController _controller;
     private readonly string _testDir;
@@ -32,22 +34,21 @@ public class SettingsControllerSecureStorageTests : IDisposable
     {
         _mockLogger = new Mock<ILogger<SettingsController>>();
         _mockSecureLogger = new Mock<ILogger<SecureStorageService>>();
-        _mockProviderSettings = new Mock<ProviderSettings>(
-            Mock.Of<ILogger<ProviderSettings>>());
-
         // Create temporary test directory
         _testDir = Path.Combine(Path.GetTempPath(), "AuraSettingsTests_" + Guid.NewGuid());
         Directory.CreateDirectory(_testDir);
 
-        // Mock provider settings to return test directory
-        _mockProviderSettings.Setup(x => x.GetAuraDataDirectory()).Returns(_testDir);
+        var providerLoggerFactory = LoggerFactory.Create(builder => builder.AddConsole());
+        _providerSettings = CreateTestProviderSettings(
+            providerLoggerFactory.CreateLogger<ProviderSettings>(),
+            _testDir);
 
         // Create real secure storage service
         _secureStorage = new SecureStorageService(_mockSecureLogger.Object);
 
         _controller = new SettingsController(
             _mockLogger.Object,
-            _mockProviderSettings.Object,
+            _providerSettings,
             _secureStorage);
 
         _controller.ControllerContext = new ControllerContext
@@ -71,6 +72,25 @@ public class SettingsControllerSecureStorageTests : IDisposable
         }
 
         GC.SuppressFinalize(this);
+    }
+    
+    private static ProviderSettings CreateTestProviderSettings(ILogger<ProviderSettings> logger, string rootDirectory)
+    {
+        var settings = new ProviderSettings(logger);
+
+        var portableRootField = typeof(ProviderSettings).GetField("_portableRoot", BindingFlags.NonPublic | BindingFlags.Instance);
+        var configPathField = typeof(ProviderSettings).GetField("_configPath", BindingFlags.NonPublic | BindingFlags.Instance);
+
+        var auraDataDir = Path.Combine(rootDirectory, "AuraData");
+        if (!Directory.Exists(auraDataDir))
+        {
+            Directory.CreateDirectory(auraDataDir);
+        }
+
+        portableRootField?.SetValue(settings, rootDirectory);
+        configPathField?.SetValue(settings, Path.Combine(auraDataDir, "settings.json"));
+
+        return settings;
     }
 
     [Fact]
@@ -259,5 +279,23 @@ public class SettingsControllerSecureStorageTests : IDisposable
         var loadedSettings = Assert.IsType<UserSettings>(okResult.Value);
         
         Assert.Equal("sk-updated-key", loadedSettings.ApiKeys.OpenAI);
+    }
+
+    [Fact]
+    public async Task TestApiKey_PexelsProvider_ReturnsSuccess()
+    {
+        var request = new TestApiKeyRequest { ApiKey = "12345678901234567890" };
+
+        var actionResult = await _controller.TestApiKey("pexels", request, CancellationToken.None);
+
+        var okResult = Assert.IsType<OkObjectResult>(actionResult);
+        var payload = okResult.Value!;
+        var payloadType = payload.GetType();
+
+        var success = (bool)payloadType.GetProperty("success")!.GetValue(payload)!;
+        var message = (string)payloadType.GetProperty("message")!.GetValue(payload)!;
+
+        Assert.True(success);
+        Assert.Equal("API key format is valid", message);
     }
 }

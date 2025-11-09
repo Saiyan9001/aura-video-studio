@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 /**
  * PHASE 1: Dependency Detection and Initialization Verification
- * 
+ *
  * These smoke tests validate:
  * - Fresh installation dependency detection
  * - Auto-install functionality
@@ -287,7 +287,9 @@ describe('Smoke Test: Dependency Detection', () => {
       const response = await fetch('/api/diagnostics/initialization-order');
       const data = await response.json();
 
-      const loggingInit = data.initializationOrder.find((s: ServiceInitialization) => s.service === 'logging');
+      const loggingInit = data.initializationOrder.find(
+        (s: ServiceInitialization) => s.service === 'logging'
+      );
       expect(loggingInit).toBeDefined();
       expect(loggingInit.timestamp).toBe(1000);
     });
@@ -308,9 +310,13 @@ describe('Smoke Test: Dependency Detection', () => {
       const response = await fetch('/api/diagnostics/initialization-order');
       const data = await response.json();
 
-      const dbIndex = data.initializationOrder.findIndex((s: ServiceInitialization) => s.service === 'database');
-      const videoIndex = data.initializationOrder.findIndex((s: ServiceInitialization) => s.service === 'video-service');
-      
+      const dbIndex = data.initializationOrder.findIndex(
+        (s: ServiceInitialization) => s.service === 'database'
+      );
+      const videoIndex = data.initializationOrder.findIndex(
+        (s: ServiceInitialization) => s.service === 'video-service'
+      );
+
       expect(dbIndex).toBeLessThan(videoIndex);
     });
 
@@ -330,9 +336,13 @@ describe('Smoke Test: Dependency Detection', () => {
       const response = await fetch('/api/diagnostics/initialization-order');
       const data = await response.json();
 
-      const ffmpegIndex = data.initializationOrder.findIndex((s: ServiceInitialization) => s.service === 'ffmpeg');
-      const videoIndex = data.initializationOrder.findIndex((s: ServiceInitialization) => s.service === 'video-service');
-      
+      const ffmpegIndex = data.initializationOrder.findIndex(
+        (s: ServiceInitialization) => s.service === 'ffmpeg'
+      );
+      const videoIndex = data.initializationOrder.findIndex(
+        (s: ServiceInitialization) => s.service === 'video-service'
+      );
+
       expect(ffmpegIndex).toBeLessThan(videoIndex);
     });
   });
@@ -341,7 +351,7 @@ describe('Smoke Test: Dependency Detection', () => {
     it('should persist dependency status in localStorage', () => {
       // Clear first to ensure clean state
       localStorage.clear();
-      
+
       const dependencyStatus = {
         ffmpeg: { installed: true, version: '6.0' },
         python: { installed: true, version: '3.11.0' },
@@ -349,9 +359,9 @@ describe('Smoke Test: Dependency Detection', () => {
       };
 
       localStorage.setItem('dependencyStatus', JSON.stringify(dependencyStatus));
-      
+
       const retrieved = JSON.parse(localStorage.getItem('dependencyStatus') || '{}');
-      
+
       expect(retrieved).toBeDefined();
       expect(retrieved.ffmpeg).toBeDefined();
       expect(retrieved.ffmpeg.installed).toBe(true);
@@ -362,10 +372,13 @@ describe('Smoke Test: Dependency Detection', () => {
 
     it('should allow rescan to force fresh check', async () => {
       // Set stale status
-      localStorage.setItem('dependencyStatus', JSON.stringify({
-        ffmpeg: { installed: false },
-        lastCheck: new Date(Date.now() - 86400000).toISOString(), // 1 day ago
-      }));
+      localStorage.setItem(
+        'dependencyStatus',
+        JSON.stringify({
+          ffmpeg: { installed: false },
+          lastCheck: new Date(Date.now() - 86400000).toISOString(), // 1 day ago
+        })
+      );
 
       const mockFetch = vi.fn().mockResolvedValue({
         ok: true,
@@ -404,6 +417,218 @@ describe('Smoke Test: Dependency Detection', () => {
       const aiService = data.dependencies.find((d: Dependency) => d.name === 'AI Service');
       expect(aiService.status).toBe('offline');
       expect(aiService.warning).toBeTruthy();
+    });
+  });
+
+  describe('1.6 Comprehensive Dependency Check', () => {
+    it('should return Node.js detection status', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          success: true,
+          nodejs: {
+            installed: true,
+            version: '20.0.0',
+          },
+        }),
+      });
+      global.fetch = mockFetch;
+
+      const response = await fetch('/api/dependencies/check');
+      const data = await response.json();
+
+      expect(data.success).toBe(true);
+      expect(data.nodejs).toBeDefined();
+      expect(data.nodejs.installed).toBe(true);
+    });
+
+    it('should return .NET detection status', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          success: true,
+          dotnet: {
+            installed: true,
+            version: '8.0.0',
+          },
+        }),
+      });
+      global.fetch = mockFetch;
+
+      const response = await fetch('/api/dependencies/check');
+      const data = await response.json();
+
+      expect(data.success).toBe(true);
+      expect(data.dotnet).toBeDefined();
+      expect(data.dotnet.installed).toBe(true);
+    });
+
+    it('should return Python detection status', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          success: true,
+          python: {
+            installed: true,
+            version: '3.11.0',
+          },
+        }),
+      });
+      global.fetch = mockFetch;
+
+      const response = await fetch('/api/dependencies/check');
+      const data = await response.json();
+
+      expect(data.success).toBe(true);
+      expect(data.python).toBeDefined();
+    });
+
+    it('should return disk space information', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          success: true,
+          diskSpaceGB: 50.5,
+          internetConnected: true,
+        }),
+      });
+      global.fetch = mockFetch;
+
+      const response = await fetch('/api/dependencies/check');
+      const data = await response.json();
+
+      expect(data.success).toBe(true);
+      expect(data.diskSpaceGB).toBeGreaterThan(0);
+      expect(data.internetConnected).toBeDefined();
+    });
+  });
+
+  describe('1.7 Provider Availability Check', () => {
+    it('should check Ollama availability', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          success: true,
+          ollamaAvailable: true,
+          stableDiffusionAvailable: false,
+          networkConnected: true,
+        }),
+      });
+      global.fetch = mockFetch;
+
+      const response = await fetch('/api/diagnostics/providers/availability');
+      const data = await response.json();
+
+      expect(data.success).toBe(true);
+      expect(data.ollamaAvailable).toBeDefined();
+    });
+
+    it('should check Stable Diffusion availability', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          success: true,
+          stableDiffusionAvailable: true,
+        }),
+      });
+      global.fetch = mockFetch;
+
+      const response = await fetch('/api/diagnostics/providers/availability');
+      const data = await response.json();
+
+      expect(data.success).toBe(true);
+      expect(data.stableDiffusionAvailable).toBeDefined();
+    });
+
+    it('should return provider list', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          success: true,
+          providers: [
+            {
+              providerName: 'Ollama',
+              providerType: 'LLM',
+              isAvailable: true,
+            },
+          ],
+        }),
+      });
+      global.fetch = mockFetch;
+
+      const response = await fetch('/api/diagnostics/providers/availability');
+      const data = await response.json();
+
+      expect(data.success).toBe(true);
+      expect(data.providers).toBeDefined();
+      expect(Array.isArray(data.providers)).toBe(true);
+    });
+  });
+
+  describe('1.8 Auto-Configuration Detection', () => {
+    it('should return auto-configuration recommendations', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          success: true,
+          recommendedThreadCount: 8,
+          recommendedMemoryLimitMB: 8192,
+          recommendedQualityPreset: 'High',
+          useHardwareAcceleration: true,
+          hardwareAccelerationMethod: 'nvenc',
+          recommendedTier: 'Pro',
+        }),
+      });
+      global.fetch = mockFetch;
+
+      const response = await fetch('/api/diagnostics/auto-config');
+      const data = await response.json();
+
+      expect(data.success).toBe(true);
+      expect(data.recommendedThreadCount).toBeGreaterThan(0);
+      expect(data.recommendedMemoryLimitMB).toBeGreaterThan(0);
+      expect(data.recommendedQualityPreset).toBeTruthy();
+    });
+
+    it('should detect hardware acceleration support', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          success: true,
+          useHardwareAcceleration: true,
+          hardwareAccelerationMethod: 'nvenc',
+        }),
+      });
+      global.fetch = mockFetch;
+
+      const response = await fetch('/api/diagnostics/auto-config');
+      const data = await response.json();
+
+      expect(data.success).toBe(true);
+      expect(data.useHardwareAcceleration).toBeDefined();
+      if (data.useHardwareAcceleration) {
+        expect(data.hardwareAccelerationMethod).toBeTruthy();
+      }
+    });
+
+    it('should recommend tier based on capabilities', async () => {
+      const mockFetch = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          success: true,
+          recommendedTier: 'Pro',
+          enableLocalProviders: true,
+          configuredProviders: ['FFmpeg', 'Ollama (Local LLM)'],
+        }),
+      });
+      global.fetch = mockFetch;
+
+      const response = await fetch('/api/diagnostics/auto-config');
+      const data = await response.json();
+
+      expect(data.success).toBe(true);
+      expect(data.recommendedTier).toBeTruthy();
+      expect(['Free', 'Local', 'Pro']).toContain(data.recommendedTier);
     });
   });
 });

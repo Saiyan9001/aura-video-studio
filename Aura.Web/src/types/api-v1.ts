@@ -1607,6 +1607,43 @@ export interface GenerateSubtitlesRequest {
 }
 
 // ============================================================================
+// PROVIDER VALIDATION
+// ============================================================================
+
+/**
+ * Request to validate OpenAI API key
+ */
+export interface ValidateOpenAIKeyRequest {
+  apiKey: string;
+  baseUrl?: string;
+  organizationId?: string;
+  projectId?: string;
+}
+
+/**
+ * Response from provider validation with detailed status
+ */
+export interface ProviderValidationResponse {
+  isValid: boolean;
+  status: string;
+  message?: string;
+  correlationId?: string;
+  details?: ValidationDetails;
+}
+
+/**
+ * Detailed validation information
+ */
+export interface ValidationDetails {
+  provider: string;
+  keyFormat: string;
+  formatValid: boolean;
+  networkCheckPassed?: boolean;
+  httpStatusCode?: number;
+  errorType?: string;
+  responseTimeMs?: number;
+}
+
 // VERSION INFO
 // ============================================================================
 
@@ -1620,4 +1657,173 @@ export interface VersionInfo {
   assemblyVersion: string;
   runtimeVersion: string;
   description: string;
+}
+
+// ============================================================================
+// PROVIDER CONFIGURATION TYPES
+// ============================================================================
+
+/**
+ * Provider configuration with API keys, priorities, and cost limits
+ */
+export interface ProviderConfigDto {
+  name: string;
+  type: string;
+  enabled: boolean;
+  priority: number;
+  apiKey: string | null;
+  additionalSettings: Record<string, string> | null;
+  costLimit: number | null;
+  status: string | null;
+}
+
+/**
+ * Request to save provider configuration
+ */
+export interface SaveProviderConfigRequest {
+  providers: ProviderConfigDto[];
+}
+
+/**
+ * Available model information
+ */
+export interface AvailableModelDto {
+  id: string;
+  name: string;
+  description: string | null;
+  capabilities: string[];
+  estimatedCostPer1kTokens: number | null;
+  isAvailable: boolean;
+  requiredApiKey: string | null;
+}
+
+/**
+ * Model selection response
+ */
+export interface ModelSelectionResponse {
+  providerName: string;
+  providerType: string;
+  selectedModel: string | null;
+  availableModels: AvailableModelDto[];
+}
+
+/**
+ * Video quality settings
+ */
+export interface VideoQualityDto {
+  resolution: string;
+  width: number;
+  height: number;
+  framerate: number;
+  bitratePreset: string;
+  bitrateKbps: number;
+  codec: string;
+  container: string;
+}
+
+/**
+ * Audio quality settings
+ */
+export interface AudioQualityDto {
+  bitrate: number;
+  sampleRate: number;
+  channels: number;
+  codec: string;
+}
+
+/**
+ * Subtitle style configuration
+ */
+export interface SubtitleStyleDto {
+  fontFamily: string;
+  fontSize: number;
+  fontColor: string;
+  backgroundColor: string;
+  backgroundOpacity: number;
+  position: string;
+  outlineWidth: number;
+  outlineColor: string;
+}
+
+/**
+ * Quality configuration for video and audio
+ */
+export interface QualityConfigDto {
+  video: VideoQualityDto;
+  audio: AudioQualityDto;
+  subtitles: SubtitleStyleDto | null;
+}
+
+/**
+ * Configuration validation result
+ */
+export interface ConfigValidationResultDto {
+  isValid: boolean;
+  issues: ValidationIssueDto[];
+  warnings: ValidationIssueDto[];
+}
+
+/**
+ * Configuration profile
+ */
+export interface ConfigurationProfileDto {
+  id: string;
+  name: string;
+  description: string;
+  providerConfig: SaveProviderConfigRequest;
+  qualityConfig: QualityConfigDto;
+  created: string;
+  lastModified: string;
+  isDefault: boolean;
+  version: string;
+}
+
+/**
+ * Request to save a configuration profile
+ */
+export interface SaveConfigProfileRequest {
+  name: string;
+  description: string;
+  providerConfig: SaveProviderConfigRequest;
+  qualityConfig: QualityConfigDto;
+}
+
+/**
+ * Export/Import configuration container
+ */
+export interface ConfigurationExportDto {
+  version: string;
+  exportedAt: string;
+  profiles: ConfigurationProfileDto[];
+  currentProfile: ConfigurationProfileDto;
+}
+
+/**
+ * Request to import configuration
+ */
+export interface ImportConfigurationRequest {
+  configuration: ConfigurationExportDto;
+  overwriteExisting: boolean;
+}
+
+/**
+ * Resolution presets
+ */
+export enum ResolutionPreset {
+  SD_480p = 'SD_480p',
+  HD_720p = 'HD_720p',
+  FullHD_1080p = 'FullHD_1080p',
+  QHD_1440p = 'QHD_1440p',
+  UHD_4K = 'UHD_4K',
+}
+
+/**
+ * Bitrate presets
+ */
+export enum BitratePreset {
+  Low = 'Low',
+  Medium = 'Medium',
+  High = 'High',
+  VeryHigh = 'VeryHigh',
+  Custom = 'Custom',
 }

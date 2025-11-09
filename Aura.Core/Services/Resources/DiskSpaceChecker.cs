@@ -88,7 +88,7 @@ public class DiskSpaceChecker
                 availableBytes / (1024.0 * 1024.0),
                 requiredBytes / (1024.0 * 1024.0));
 
-            throw ResourceException.InsufficientDiskSpace(path, requiredBytes, correlationId);
+            throw ResourceException.InsufficientDiskSpace(path, requiredBytes, availableBytes, correlationId);
         }
     }
 

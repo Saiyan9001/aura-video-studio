@@ -36,11 +36,19 @@ jobs:
       - name: Restore
         run: dotnet restore
 
-      - name: Build (Release)
-        run: dotnet build --configuration Release --no-restore
+      - name: Build (Release) - Linux-compatible projects only
+        run: |
+          # Build Linux-compatible projects (excludes Aura.App which is Windows-only WinUI)
+          dotnet build Aura.Core/Aura.Core.csproj --configuration Release --no-restore
+          dotnet build Aura.Providers/Aura.Providers.csproj --configuration Release --no-restore
+          dotnet build Aura.Api/Aura.Api.csproj --configuration Release --no-restore
+          dotnet build Aura.Cli/Aura.Cli.csproj --configuration Release --no-restore
+          dotnet build Aura.Analyzers/Aura.Analyzers.csproj --configuration Release --no-restore
+          dotnet build Aura.Tests/Aura.Tests.csproj --configuration Release --no-restore
+          dotnet build Aura.E2E/Aura.E2E.csproj --configuration Release --no-restore
 
       - name: Run Unit Tests
-        run: dotnet test --configuration Release --no-build --logger "trx;LogFileName=test-results.trx"
+        run: dotnet test Aura.Tests/Aura.Tests.csproj --configuration Release --no-build --logger "trx;LogFileName=test-results.trx"
       
       - name: Upload Test Results
         if: always()

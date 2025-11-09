@@ -66,7 +66,7 @@ export function GeneralSettingsTab({
     ) {
       try {
         await resetFirstRunStatus();
-        navigate('/onboarding');
+        navigate('/setup');
       } catch (error) {
         console.error('Failed to reset wizard:', error);
         alert('Failed to reset wizard. Please try again.');

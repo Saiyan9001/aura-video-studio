@@ -17,9 +17,21 @@ public class ResourceException : AuraException
     /// </summary>
     public string? ResourcePath { get; }
 
+    /// <summary>
+    /// Amount of resource required (bytes for disk/memory)
+    /// </summary>
+    public long Required { get; }
+
+    /// <summary>
+    /// Amount of resource available (bytes for disk/memory)
+    /// </summary>
+    public long Available { get; }
+
     public ResourceException(
         ResourceType resourceType,
         string message,
+        long required = 0,
+        long available = 0,
         string? userMessage = null,
         string? resourcePath = null,
         string? correlationId = null,
@@ -36,6 +48,8 @@ public class ResourceException : AuraException
     {
         ResourceType = resourceType;
         ResourcePath = resourcePath;
+        Required = required;
+        Available = available;
 
         // Add resource context
         WithContext("resourceType", resourceType.ToString());
@@ -43,19 +57,31 @@ public class ResourceException : AuraException
         {
             WithContext("resourcePath", resourcePath);
         }
+        if (required > 0)
+        {
+            WithContext("requiredBytes", required);
+            WithContext("requiredMB", required / (1024 * 1024));
+        }
+        if (available > 0)
+        {
+            WithContext("availableBytes", available);
+            WithContext("availableMB", available / (1024 * 1024));
+        }
     }
 
     private static string GenerateErrorCode(ResourceType resourceType)
     {
         return resourceType switch
         {
-            ResourceType.DiskSpace => "E601",
+            ResourceType.Disk or ResourceType.DiskSpace => "E601",
             ResourceType.Memory => "E602",
-            ResourceType.FileAccess => "E603",
-            ResourceType.DirectoryAccess => "E604",
-            ResourceType.FileNotFound => "E605",
-            ResourceType.FileLocked => "E606",
-            ResourceType.FileCorrupted => "E607",
+            ResourceType.GPU => "E603",
+            ResourceType.Network => "E604",
+            ResourceType.FileAccess => "E605",
+            ResourceType.DirectoryAccess => "E606",
+            ResourceType.FileNotFound => "E607",
+            ResourceType.FileLocked => "E608",
+            ResourceType.FileCorrupted => "E609",
             _ => "E699"
         };
     }
@@ -64,8 +90,10 @@ public class ResourceException : AuraException
     {
         return resourceType switch
         {
-            ResourceType.DiskSpace => "Insufficient disk space to complete the operation.",
+            ResourceType.Disk or ResourceType.DiskSpace => "Insufficient disk space to complete the operation.",
             ResourceType.Memory => "Insufficient memory to complete the operation.",
+            ResourceType.GPU => "GPU resources unavailable or insufficient.",
+            ResourceType.Network => "Network resources unavailable.",
             ResourceType.FileAccess => "Unable to access the required file.",
             ResourceType.DirectoryAccess => "Unable to access the required directory.",
             ResourceType.FileNotFound => "Required file not found.",
@@ -79,7 +107,7 @@ public class ResourceException : AuraException
     {
         return resourceType switch
         {
-            ResourceType.DiskSpace => new[]
+            ResourceType.Disk or ResourceType.DiskSpace => new[]
             {
                 "Free up disk space and retry",
                 "Choose a different output location with more space",
@@ -91,6 +119,20 @@ public class ResourceException : AuraException
                 "Reduce video quality or resolution",
                 "Try with shorter content",
                 "Restart the application"
+            },
+            ResourceType.GPU => new[]
+            {
+                "Ensure GPU drivers are up to date",
+                "Close other GPU-intensive applications",
+                "Try using CPU rendering instead",
+                "Reduce video quality settings"
+            },
+            ResourceType.Network => new[]
+            {
+                "Check your internet connection",
+                "Verify network settings",
+                "Try again later",
+                "Use offline providers if available"
             },
             ResourceType.FileAccess or ResourceType.DirectoryAccess => new[]
             {
@@ -123,7 +165,7 @@ public class ResourceException : AuraException
     /// <summary>
     /// Creates a ResourceException for disk space errors
     /// </summary>
-    public static ResourceException InsufficientDiskSpace(string? path = null, long? requiredBytes = null, string? correlationId = null)
+    public static ResourceException InsufficientDiskSpace(string? path = null, long? requiredBytes = null, long? availableBytes = null, string? correlationId = null)
     {
         var message = requiredBytes.HasValue
             ? $"Insufficient disk space. Required: {requiredBytes / (1024 * 1024)} MB"
@@ -132,6 +174,8 @@ public class ResourceException : AuraException
         return new ResourceException(
             ResourceType.DiskSpace,
             message,
+            requiredBytes ?? 0,
+            availableBytes ?? 0,
             resourcePath: path,
             correlationId: correlationId);
     }
@@ -139,7 +183,7 @@ public class ResourceException : AuraException
     /// <summary>
     /// Creates a ResourceException for memory errors
     /// </summary>
-    public static ResourceException InsufficientMemory(long? requiredBytes = null, string? correlationId = null)
+    public static ResourceException InsufficientMemory(long? requiredBytes = null, long? availableBytes = null, string? correlationId = null)
     {
         var message = requiredBytes.HasValue
             ? $"Insufficient memory. Required: {requiredBytes / (1024 * 1024)} MB"
@@ -148,6 +192,8 @@ public class ResourceException : AuraException
         return new ResourceException(
             ResourceType.Memory,
             message,
+            requiredBytes ?? 0,
+            availableBytes ?? 0,
             correlationId: correlationId);
     }
 
@@ -209,6 +255,14 @@ public class ResourceException : AuraException
         {
             response["resourcePath"] = ResourcePath;
         }
+        if (Required > 0)
+        {
+            response["required"] = new { bytes = Required, mb = Required / (1024 * 1024) };
+        }
+        if (Available > 0)
+        {
+            response["available"] = new { bytes = Available, mb = Available / (1024 * 1024) };
+        }
         return response;
     }
 }
@@ -218,8 +272,11 @@ public class ResourceException : AuraException
 /// </summary>
 public enum ResourceType
 {
+    Disk,
     DiskSpace,
     Memory,
+    GPU,
+    Network,
     FileAccess,
     DirectoryAccess,
     FileNotFound,

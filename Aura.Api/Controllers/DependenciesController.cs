@@ -747,6 +747,77 @@ public class DependenciesController : ControllerBase
             });
         }
     }
+
+    /// <summary>
+    /// Get comprehensive dependency status including Node.js, .NET, Python
+    /// </summary>
+    [HttpGet("check")]
+    public async Task<IActionResult> CheckDependencies(CancellationToken ct)
+    {
+        try
+        {
+            _logger.LogInformation("Checking comprehensive dependency status via API");
+            
+            var detector = new Core.Services.Setup.DependencyDetector(
+                Microsoft.Extensions.Logging.Abstractions.NullLogger<Core.Services.Setup.DependencyDetector>.Instance,
+                _ffmpegLocator,
+                new System.Net.Http.HttpClient());
+            
+            var status = await detector.DetectAllDependenciesAsync(ct);
+            
+            return Ok(new
+            {
+                success = true,
+                ffmpeg = new
+                {
+                    installed = status.FFmpegInstalled,
+                    version = status.FFmpegVersion,
+                    installationRequired = status.FFmpegInstallationRequired
+                },
+                nodejs = new
+                {
+                    installed = status.NodeJsInstalled,
+                    version = status.NodeJsVersion
+                },
+                dotnet = new
+                {
+                    installed = status.DotNetInstalled,
+                    version = status.DotNetVersion
+                },
+                python = new
+                {
+                    installed = status.PythonInstalled,
+                    version = status.PythonVersion
+                },
+                ollama = new
+                {
+                    installed = status.OllamaInstalled,
+                    version = status.OllamaVersion
+                },
+                piperTts = new
+                {
+                    installed = status.PiperTtsInstalled,
+                    path = status.PiperTtsPath
+                },
+                nvidia = new
+                {
+                    installed = status.NvidiaDriversInstalled,
+                    version = status.NvidiaDriverVersion
+                },
+                diskSpaceGB = status.DiskSpaceGB,
+                internetConnected = status.InternetConnected
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to check dependencies");
+            return StatusCode(500, new
+            {
+                success = false,
+                error = ex.Message
+            });
+        }
+    }
 }
 
 public class AttachComponentRequest

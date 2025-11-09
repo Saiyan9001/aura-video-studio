@@ -112,6 +112,18 @@ public record Job
     /// <summary>Whether this job can be resumed from LastCompletedStep</summary>
     public bool CanResume { get; init; } = false;
     
+    /// <summary>Whether this job is a Quick Demo with resilient fallback behavior</summary>
+    public bool IsQuickDemo { get; init; } = false;
+    
+    /// <summary>Final output path for the rendered video (populated after successful render)</summary>
+    public string? OutputPath { get; init; }
+    
+    /// <summary>Progress history for recovery and replay</summary>
+    public List<GenerationProgress> ProgressHistory { get; init; } = new();
+    
+    /// <summary>Current detailed progress information</summary>
+    public GenerationProgress? CurrentProgress { get; init; }
+    
     /// <summary>
     /// Creates a new Job with updated progress, ensuring monotonic invariant (progress never decreases)
     /// </summary>

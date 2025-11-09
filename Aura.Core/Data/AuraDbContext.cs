@@ -67,6 +67,16 @@ public class AuraDbContext : DbContext
     /// </summary>
     public DbSet<ContentBlobEntity> ContentBlobs { get; set; } = null!;
 
+    /// <summary>
+    /// Application configuration stored in database
+    /// </summary>
+    public DbSet<ConfigurationEntity> Configurations { get; set; } = null!;
+
+    /// <summary>
+    /// System-wide configuration and setup status
+    /// </summary>
+    public DbSet<SystemConfigurationEntity> SystemConfigurations { get; set; } = null!;
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -200,6 +210,39 @@ public class AuraDbContext : DbContext
             entity.HasIndex(e => e.ContentType);
             entity.HasIndex(e => e.LastReferencedAt);
             entity.HasIndex(e => e.ReferenceCount);
+        });
+
+        // Configure ConfigurationEntity
+        modelBuilder.Entity<ConfigurationEntity>(entity =>
+        {
+            entity.HasKey(e => e.Key);
+            entity.HasIndex(e => e.Category);
+            entity.HasIndex(e => e.IsSensitive);
+            entity.HasIndex(e => e.IsActive);
+            entity.HasIndex(e => e.UpdatedAt);
+            entity.HasIndex(e => new { e.Category, e.IsActive });
+            entity.HasIndex(e => new { e.Category, e.UpdatedAt });
+        });
+
+        // Configure SystemConfigurationEntity
+        modelBuilder.Entity<SystemConfigurationEntity>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            
+            // Seed default record
+            entity.HasData(new SystemConfigurationEntity
+            {
+                Id = 1,
+                IsSetupComplete = false,
+                FFmpegPath = null,
+                OutputDirectory = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                    "AuraVideoStudio",
+                    "Output"
+                ),
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            });
         });
     }
 }

@@ -687,6 +687,262 @@ public class SetupController : ControllerBase
             return StatusCode(500, new { error = "Failed to reset wizard" });
         }
     }
+
+    /// <summary>
+    /// Get system configuration and setup status
+    /// </summary>
+    [HttpGet("system-status")]
+    public async Task<IActionResult> GetSetupStatus(CancellationToken ct)
+    {
+        try
+        {
+            _logger.LogInformation("Getting system setup status");
+
+            var config = await _dbContext.SystemConfigurations
+                .FirstOrDefaultAsync(ct)
+                .ConfigureAwait(false);
+
+            if (config == null)
+            {
+                // Create default configuration if it doesn't exist
+                config = new SystemConfigurationEntity
+                {
+                    Id = 1,
+                    IsSetupComplete = false,
+                    FFmpegPath = null,
+                    OutputDirectory = Path.Combine(
+                        Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                        "AuraVideoStudio",
+                        "Output"
+                    ),
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                };
+
+                _dbContext.SystemConfigurations.Add(config);
+                await _dbContext.SaveChangesAsync(ct).ConfigureAwait(false);
+            }
+
+            return Ok(new SetupStatusResponse
+            {
+                IsComplete = config.IsSetupComplete,
+                FFmpegPath = config.FFmpegPath,
+                OutputDirectory = config.OutputDirectory
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting setup status");
+            return StatusCode(500, new { error = "Failed to get setup status" });
+        }
+    }
+
+    /// <summary>
+    /// Complete the setup wizard
+    /// </summary>
+    [HttpPost("complete")]
+    public async Task<IActionResult> CompleteSetup(
+        [FromBody] SetupCompleteRequest request,
+        CancellationToken ct)
+    {
+        try
+        {
+            _logger.LogInformation("Completing setup wizard");
+
+            var errors = new List<string>();
+
+            // Validate FFmpeg exists
+            if (!string.IsNullOrEmpty(request.FFmpegPath))
+            {
+                if (!System.IO.File.Exists(request.FFmpegPath))
+                {
+                    errors.Add("FFmpeg not found at specified path");
+                }
+            }
+            else
+            {
+                // Check if FFmpeg is in PATH
+                var status = await _detector.DetectAllDependenciesAsync(ct).ConfigureAwait(false);
+                if (!status.FFmpegInstalled)
+                {
+                    errors.Add("FFmpeg not found");
+                }
+            }
+
+            // Validate output directory
+            if (string.IsNullOrEmpty(request.OutputDirectory))
+            {
+                errors.Add("Output directory is required");
+            }
+            else
+            {
+                try
+                {
+                    if (!Directory.Exists(request.OutputDirectory))
+                    {
+                        Directory.CreateDirectory(request.OutputDirectory);
+                    }
+
+                    // Test write permissions
+                    var testFile = Path.Combine(request.OutputDirectory, $".test_{Guid.NewGuid()}.tmp");
+                    await System.IO.File.WriteAllTextAsync(testFile, "test", ct).ConfigureAwait(false);
+                    System.IO.File.Delete(testFile);
+                }
+                catch (Exception ex)
+                {
+                    errors.Add($"Output directory not writable: {ex.Message}");
+                }
+            }
+
+            // Check if at least one provider is configured
+            var configuredProviders = await _secureStorage.GetConfiguredProvidersAsync().ConfigureAwait(false);
+            if (configuredProviders.Count == 0)
+            {
+                errors.Add("No providers configured");
+            }
+
+            if (errors.Count > 0)
+            {
+                return BadRequest(new { errors });
+            }
+
+            // Update system configuration
+            var config = await _dbContext.SystemConfigurations
+                .FirstOrDefaultAsync(ct)
+                .ConfigureAwait(false);
+
+            if (config == null)
+            {
+                config = new SystemConfigurationEntity
+                {
+                    Id = 1
+                };
+                _dbContext.SystemConfigurations.Add(config);
+            }
+
+            config.IsSetupComplete = true;
+            config.FFmpegPath = request.FFmpegPath;
+            config.OutputDirectory = request.OutputDirectory ?? config.OutputDirectory;
+            config.UpdatedAt = DateTime.UtcNow;
+
+            await _dbContext.SaveChangesAsync(ct).ConfigureAwait(false);
+
+            _logger.LogInformation("Setup wizard completed successfully");
+
+            return Ok(new { success = true });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error completing setup");
+            return StatusCode(500, new { error = "Failed to complete setup" });
+        }
+    }
+
+    /// <summary>
+    /// Check FFmpeg installation status
+    /// </summary>
+    [HttpGet("check-ffmpeg")]
+    public async Task<IActionResult> CheckFFmpeg(
+        [FromServices] IFFmpegDetectionService? ffmpegDetection,
+        CancellationToken ct)
+    {
+        try
+        {
+            _logger.LogInformation("Checking FFmpeg installation");
+
+            if (ffmpegDetection == null)
+            {
+                // Fallback: use DependencyDetector if FFmpegDetectionService is not registered
+                var status = await _detector.DetectAllDependenciesAsync(ct).ConfigureAwait(false);
+
+                return Ok(new FFmpegCheckResponse
+                {
+                    IsInstalled = status.FFmpegInstalled,
+                    Path = null,
+                    Version = status.FFmpegVersion
+                });
+            }
+
+            var info = await ffmpegDetection.DetectFFmpegAsync(ct).ConfigureAwait(false);
+
+            return Ok(new FFmpegCheckResponse
+            {
+                IsInstalled = info.IsInstalled,
+                Path = info.Path,
+                Version = info.Version,
+                Error = info.Error
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error checking FFmpeg");
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Check if directory is valid and writable
+    /// </summary>
+    [HttpPost("check-directory")]
+    public async Task<IActionResult> CheckDirectory(
+        [FromBody] CheckDirectoryRequest request,
+        CancellationToken ct)
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(request.Path))
+            {
+                return BadRequest(new DirectoryCheckResponse
+                {
+                    IsValid = false,
+                    Error = "Path is required"
+                });
+            }
+
+            _logger.LogInformation("Checking directory: {Path}", request.Path);
+
+            try
+            {
+                // Create directory if it doesn't exist
+                if (!Directory.Exists(request.Path))
+                {
+                    Directory.CreateDirectory(request.Path);
+                }
+
+                // Try to write a test file
+                var testFile = Path.Combine(request.Path, $".test_{Guid.NewGuid()}.tmp");
+                await System.IO.File.WriteAllTextAsync(testFile, "test", ct).ConfigureAwait(false);
+                System.IO.File.Delete(testFile);
+
+                return Ok(new DirectoryCheckResponse
+                {
+                    IsValid = true,
+                    Error = null
+                });
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Ok(new DirectoryCheckResponse
+                {
+                    IsValid = false,
+                    Error = "Permission denied: Cannot write to this directory"
+                });
+            }
+            catch (Exception ex)
+            {
+                return Ok(new DirectoryCheckResponse
+                {
+                    IsValid = false,
+                    Error = ex.Message
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error checking directory");
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
 }
 
 public class ValidateKeyRequest
@@ -749,3 +1005,36 @@ public class SaveWizardProgressRequest
     public string? SelectedTier { get; set; }
     public string? WizardState { get; set; }
 }
+
+public class SetupStatusResponse
+{
+    public bool IsComplete { get; set; }
+    public string? FFmpegPath { get; set; }
+    public string? OutputDirectory { get; set; }
+}
+
+public class SetupCompleteRequest
+{
+    public string? FFmpegPath { get; set; }
+    public string? OutputDirectory { get; set; }
+}
+
+public class FFmpegCheckResponse
+{
+    public bool IsInstalled { get; set; }
+    public string? Path { get; set; }
+    public string? Version { get; set; }
+    public string? Error { get; set; }
+}
+
+public class CheckDirectoryRequest
+{
+    public string? Path { get; set; }
+}
+
+public class DirectoryCheckResponse
+{
+    public bool IsValid { get; set; }
+    public string? Error { get; set; }
+}
+

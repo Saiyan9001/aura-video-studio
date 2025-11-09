@@ -177,6 +177,240 @@ public class FFmpegCommandBuilder
     }
 
     /// <summary>
+    /// Add crossfade transition between two video streams
+    /// </summary>
+    /// <param name="durationSeconds">Duration of the crossfade in seconds</param>
+    /// <param name="offset">Time offset where transition starts</param>
+    public FFmpegCommandBuilder AddCrossfadeTransition(double durationSeconds, double offset)
+    {
+        var duration = durationSeconds.ToString(CultureInfo.InvariantCulture);
+        var offsetStr = offset.ToString(CultureInfo.InvariantCulture);
+        _filterComplex.Add($"xfade=transition=fade:duration={duration}:offset={offsetStr}");
+        return this;
+    }
+
+    /// <summary>
+    /// Add wipe transition between two video streams
+    /// </summary>
+    /// <param name="durationSeconds">Duration of the wipe in seconds</param>
+    /// <param name="offset">Time offset where transition starts</param>
+    /// <param name="direction">Wipe direction: left, right, up, down</param>
+    public FFmpegCommandBuilder AddWipeTransition(double durationSeconds, double offset, string direction = "right")
+    {
+        var duration = durationSeconds.ToString(CultureInfo.InvariantCulture);
+        var offsetStr = offset.ToString(CultureInfo.InvariantCulture);
+        var transitionType = direction.ToLowerInvariant() switch
+        {
+            "left" => "wipeleft",
+            "right" => "wiperight",
+            "up" => "wipeup",
+            "down" => "wipedown",
+            _ => "wiperight"
+        };
+        _filterComplex.Add($"xfade=transition={transitionType}:duration={duration}:offset={offsetStr}");
+        return this;
+    }
+
+    /// <summary>
+    /// Add dissolve transition between two video streams
+    /// </summary>
+    /// <param name="durationSeconds">Duration of the dissolve in seconds</param>
+    /// <param name="offset">Time offset where transition starts</param>
+    public FFmpegCommandBuilder AddDissolveTransition(double durationSeconds, double offset)
+    {
+        var duration = durationSeconds.ToString(CultureInfo.InvariantCulture);
+        var offsetStr = offset.ToString(CultureInfo.InvariantCulture);
+        _filterComplex.Add($"xfade=transition=dissolve:duration={duration}:offset={offsetStr}");
+        return this;
+    }
+
+    /// <summary>
+    /// Add Ken Burns effect (zoom and pan) to static images
+    /// </summary>
+    /// <param name="durationSeconds">Duration of the effect</param>
+    /// <param name="zoomStart">Starting zoom level (1.0 = no zoom)</param>
+    /// <param name="zoomEnd">Ending zoom level (1.5 = 150% zoom)</param>
+    /// <param name="panX">Horizontal pan (-1.0 to 1.0, 0 = center)</param>
+    /// <param name="panY">Vertical pan (-1.0 to 1.0, 0 = center)</param>
+    public FFmpegCommandBuilder AddKenBurnsEffect(double durationSeconds, double zoomStart = 1.0, double zoomEnd = 1.2, double panX = 0.0, double panY = 0.0)
+    {
+        var duration = durationSeconds.ToString(CultureInfo.InvariantCulture);
+        var zS = zoomStart.ToString(CultureInfo.InvariantCulture);
+        var zE = zoomEnd.ToString(CultureInfo.InvariantCulture);
+        
+        var startX = (0.5 - panX * 0.3).ToString(CultureInfo.InvariantCulture);
+        var startY = (0.5 - panY * 0.3).ToString(CultureInfo.InvariantCulture);
+        var endX = (0.5 + panX * 0.3).ToString(CultureInfo.InvariantCulture);
+        var endY = (0.5 + panY * 0.3).ToString(CultureInfo.InvariantCulture);
+        
+        var filter = $"zoompan=z='if(lte(zoom,{zS}),{zS},if(gte(zoom,{zE}),{zE},zoom+({zE}-{zS})/{duration}/fps))':x='iw/2-(iw/zoom/2)+({endX}-{startX})*on/{duration}/fps*iw':y='ih/2-(ih/zoom/2)+({endY}-{startY})*on/{duration}/fps*ih':d={duration}*fps:s=1920x1080:fps=30";
+        _filterComplex.Add(filter);
+        return this;
+    }
+
+    /// <summary>
+    /// Add picture-in-picture overlay
+    /// </summary>
+    /// <param name="overlayInputIndex">Input index of the overlay video (0-based)</param>
+    /// <param name="x">X position (pixels or expression like 'W-w-10')</param>
+    /// <param name="y">Y position (pixels or expression like 'H-h-10')</param>
+    /// <param name="scale">Scale factor for overlay (1.0 = original size, 0.25 = quarter size)</param>
+    public FFmpegCommandBuilder AddPictureInPicture(int overlayInputIndex, string x = "W-w-10", string y = "H-h-10", double scale = 0.25)
+    {
+        var scaleStr = scale.ToString(CultureInfo.InvariantCulture);
+        _filterComplex.Add($"[{overlayInputIndex}:v]scale=iw*{scaleStr}:ih*{scaleStr}[pip];[0:v][pip]overlay={x}:{y}");
+        return this;
+    }
+
+    /// <summary>
+    /// Add text overlay with positioning
+    /// </summary>
+    /// <param name="text">Text to display</param>
+    /// <param name="fontFile">Path to font file</param>
+    /// <param name="fontSize">Font size in pixels</param>
+    /// <param name="x">X position (pixels or expression like '(w-text_w)/2' for center)</param>
+    /// <param name="y">Y position (pixels or expression like '(h-text_h)/2' for center)</param>
+    /// <param name="fontColor">Font color (e.g., 'white', '#FFFFFF')</param>
+    /// <param name="boxColor">Background box color with alpha (e.g., 'black@0.5')</param>
+    public FFmpegCommandBuilder AddTextOverlay(string text, string? fontFile = null, int fontSize = 48, string x = "(w-text_w)/2", string y = "(h-text_h)/2", string fontColor = "white", string? boxColor = null)
+    {
+        var escapedText = text.Replace(":", "\\:").Replace("'", "\\'");
+        var filter = $"drawtext=text='{escapedText}':fontsize={fontSize}:x={x}:y={y}:fontcolor={fontColor}";
+        
+        if (!string.IsNullOrEmpty(fontFile))
+        {
+            filter += $":fontfile={fontFile}";
+        }
+        
+        if (!string.IsNullOrEmpty(boxColor))
+        {
+            filter += $":box=1:boxcolor={boxColor}";
+        }
+        
+        _filterComplex.Add(filter);
+        return this;
+    }
+
+    /// <summary>
+    /// Add animated text overlay with fade in/out
+    /// </summary>
+    /// <param name="text">Text to display</param>
+    /// <param name="startTime">Start time in seconds</param>
+    /// <param name="duration">Duration in seconds</param>
+    /// <param name="fadeInDuration">Fade in duration in seconds</param>
+    /// <param name="fadeOutDuration">Fade out duration in seconds</param>
+    /// <param name="fontSize">Font size in pixels</param>
+    /// <param name="x">X position expression</param>
+    /// <param name="y">Y position expression</param>
+    public FFmpegCommandBuilder AddAnimatedTextOverlay(string text, double startTime, double duration, double fadeInDuration = 0.5, double fadeOutDuration = 0.5, int fontSize = 48, string x = "(w-text_w)/2", string y = "(h-text_h)/2")
+    {
+        var escapedText = text.Replace(":", "\\:").Replace("'", "\\'");
+        var st = startTime.ToString(CultureInfo.InvariantCulture);
+        var dur = duration.ToString(CultureInfo.InvariantCulture);
+        var fadeIn = fadeInDuration.ToString(CultureInfo.InvariantCulture);
+        var fadeOut = fadeOutDuration.ToString(CultureInfo.InvariantCulture);
+        var endTime = (startTime + duration).ToString(CultureInfo.InvariantCulture);
+        var fadeOutStart = (startTime + duration - fadeOutDuration).ToString(CultureInfo.InvariantCulture);
+        
+        var alpha = $"if(lt(t,{st}),0,if(lt(t,{st}+{fadeIn}),(t-{st})/{fadeIn},if(lt(t,{fadeOutStart}),1,if(lt(t,{endTime}),({endTime}-t)/{fadeOut},0))))";
+        var filter = $"drawtext=text='{escapedText}':fontsize={fontSize}:x={x}:y={y}:fontcolor=white:alpha='{alpha}':enable='between(t,{st},{endTime})'";
+        
+        _filterComplex.Add(filter);
+        return this;
+    }
+
+    /// <summary>
+    /// Add sliding text animation
+    /// </summary>
+    /// <param name="text">Text to display</param>
+    /// <param name="startTime">Start time in seconds</param>
+    /// <param name="duration">Duration in seconds</param>
+    /// <param name="direction">Slide direction: left, right, up, down</param>
+    /// <param name="fontSize">Font size in pixels</param>
+    public FFmpegCommandBuilder AddSlidingTextOverlay(string text, double startTime, double duration, string direction = "left", int fontSize = 48)
+    {
+        var escapedText = text.Replace(":", "\\:").Replace("'", "\\'");
+        var st = startTime.ToString(CultureInfo.InvariantCulture);
+        var dur = duration.ToString(CultureInfo.InvariantCulture);
+        var endTime = (startTime + duration).ToString(CultureInfo.InvariantCulture);
+        
+        var (xExpr, yExpr) = direction.ToLowerInvariant() switch
+        {
+            "left" => ($"w-((t-{st})/{dur})*(w+text_w)", "(h-text_h)/2"),
+            "right" => ($"-text_w+((t-{st})/{dur})*(w+text_w)", "(h-text_h)/2"),
+            "up" => ("(w-text_w)/2", $"h-((t-{st})/{dur})*(h+text_h)"),
+            "down" => ("(w-text_w)/2", $"-text_h+((t-{st})/{dur})*(h+text_h)"),
+            _ => ($"w-((t-{st})/{dur})*(w+text_w)", "(h-text_h)/2")
+        };
+        
+        var filter = $"drawtext=text='{escapedText}':fontsize={fontSize}:x='{xExpr}':y='{yExpr}':fontcolor=white:enable='between(t,{st},{endTime})'";
+        _filterComplex.Add(filter);
+        return this;
+    }
+
+    /// <summary>
+    /// Add audio mixing from multiple sources
+    /// </summary>
+    /// <param name="inputCount">Number of audio inputs to mix</param>
+    /// <param name="weights">Volume weights for each input (1.0 = full volume)</param>
+    public FFmpegCommandBuilder AddAudioMix(int inputCount, double[]? weights = null)
+    {
+        var inputs = new List<string>();
+        for (int i = 0; i < inputCount; i++)
+        {
+            var weight = weights != null && i < weights.Length ? weights[i] : 1.0;
+            inputs.Add($"[{i}:a]volume={weight.ToString(CultureInfo.InvariantCulture)}[a{i}]");
+        }
+        
+        var mixInputs = string.Join("", Enumerable.Range(0, inputCount).Select(i => $"[a{i}]"));
+        var filter = string.Join(";", inputs) + $";{mixInputs}amix=inputs={inputCount}:duration=longest[aout]";
+        _filterComplex.Add(filter);
+        return this;
+    }
+
+    /// <summary>
+    /// Add audio ducking (lower background audio when foreground audio is present)
+    /// </summary>
+    /// <param name="foregroundIndex">Input index of foreground audio (e.g., voice)</param>
+    /// <param name="backgroundIndex">Input index of background audio (e.g., music)</param>
+    /// <param name="threshold">Threshold in dB for ducking (-40 to 0)</param>
+    /// <param name="ratio">Reduction ratio (1 to 20, higher = more reduction)</param>
+    /// <param name="attack">Attack time in milliseconds</param>
+    /// <param name="release">Release time in milliseconds</param>
+    public FFmpegCommandBuilder AddAudioDucking(int foregroundIndex = 0, int backgroundIndex = 1, double threshold = -20, double ratio = 4, int attack = 20, int release = 250)
+    {
+        var thresholdStr = threshold.ToString(CultureInfo.InvariantCulture);
+        var ratioStr = ratio.ToString(CultureInfo.InvariantCulture);
+        var filter = $"[{backgroundIndex}:a][{foregroundIndex}:a]sidechaincompress=threshold={thresholdStr}dB:ratio={ratioStr}:attack={attack}:release={release}[aout]";
+        _filterComplex.Add(filter);
+        return this;
+    }
+
+    /// <summary>
+    /// Add watermark overlay
+    /// </summary>
+    /// <param name="watermarkPath">Path to watermark image</param>
+    /// <param name="position">Position: top-left, top-right, bottom-left, bottom-right, center</param>
+    /// <param name="opacity">Opacity (0.0 to 1.0)</param>
+    /// <param name="margin">Margin from edges in pixels</param>
+    public FFmpegCommandBuilder AddWatermark(string watermarkPath, string position = "bottom-right", double opacity = 0.7, int margin = 10)
+    {
+        var (x, y) = position.ToLowerInvariant() switch
+        {
+            "top-left" => (margin.ToString(), margin.ToString()),
+            "top-right" => ($"W-w-{margin}", margin.ToString()),
+            "bottom-left" => (margin.ToString(), $"H-h-{margin}"),
+            "bottom-right" => ($"W-w-{margin}", $"H-h-{margin}"),
+            "center" => ("(W-w)/2", "(H-h)/2"),
+            _ => ($"W-w-{margin}", $"H-h-{margin}")
+        };
+        
+        var opacityStr = opacity.ToString(CultureInfo.InvariantCulture);
+        _filterComplex.Add($"movie={watermarkPath},format=rgba,colorchannelmixer=aa={opacityStr}[wm];[0:v][wm]overlay={x}:{y}");
+        return this;
+    }
+
+    /// <summary>
     /// Set encoding preset (ultrafast, fast, medium, slow, slower)
     /// </summary>
     public FFmpegCommandBuilder SetPreset(string preset)
@@ -306,6 +540,72 @@ public class FFmpegCommandBuilder
             SetHdrMetadata(options.MaxContentLightLevel.Value, options.MaxFrameAverageLightLevel.Value);
         }
         
+        return this;
+    }
+
+    /// <summary>
+    /// Enable two-pass encoding for better quality
+    /// </summary>
+    /// <param name="passLogFile">Path to pass log file</param>
+    /// <param name="pass">Pass number (1 or 2)</param>
+    public FFmpegCommandBuilder SetTwoPassEncoding(string passLogFile, int pass)
+    {
+        if (pass != 1 && pass != 2)
+        {
+            throw new ArgumentOutOfRangeException(nameof(pass), "Pass must be 1 or 2");
+        }
+
+        _outputOptions.Add($"-pass {pass}");
+        _outputOptions.Add($"-passlogfile \"{passLogFile}\"");
+        
+        if (pass == 1)
+        {
+            _outputOptions.Add("-an");
+            _outputOptions.Add("-f null");
+        }
+        
+        return this;
+    }
+
+    /// <summary>
+    /// Add chapter markers for long-form content
+    /// </summary>
+    /// <param name="chapters">List of chapter markers with time and title</param>
+    public FFmpegCommandBuilder AddChapterMarkers(IEnumerable<(TimeSpan time, string title)> chapters)
+    {
+        var chapterList = chapters.OrderBy(c => c.time).ToList();
+        for (int i = 0; i < chapterList.Count; i++)
+        {
+            var chapter = chapterList[i];
+            var startTime = chapter.time.TotalMilliseconds;
+            var endTime = i < chapterList.Count - 1 
+                ? chapterList[i + 1].time.TotalMilliseconds 
+                : startTime + 1000;
+            
+            AddMetadata($"chapter{i}_start", ((long)startTime).ToString());
+            AddMetadata($"chapter{i}_end", ((long)endTime).ToString());
+            AddMetadata($"chapter{i}_title", chapter.title);
+        }
+        return this;
+    }
+
+    /// <summary>
+    /// Set maximum bitrate for adaptive streaming
+    /// </summary>
+    /// <param name="maxBitrateKbps">Maximum bitrate in kbps</param>
+    public FFmpegCommandBuilder SetMaxBitrate(int maxBitrateKbps)
+    {
+        _outputOptions.Add($"-maxrate {maxBitrateKbps}k");
+        return this;
+    }
+
+    /// <summary>
+    /// Set buffer size for rate control
+    /// </summary>
+    /// <param name="bufferSizeKbps">Buffer size in kbps</param>
+    public FFmpegCommandBuilder SetBufferSize(int bufferSizeKbps)
+    {
+        _outputOptions.Add($"-bufsize {bufferSizeKbps}k");
         return this;
     }
 

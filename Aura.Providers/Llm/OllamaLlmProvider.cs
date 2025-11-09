@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
@@ -7,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Aura.Core.AI;
 using Aura.Core.Models;
+using Aura.Core.Models.Generation;
 using Aura.Core.Models.Narrative;
 using Aura.Core.Models.Visual;
 using Aura.Core.Providers;
@@ -944,4 +946,283 @@ Return ONLY the transition text, no explanations or additional commentary:";
     }
 
     // Removed legacy prompt building method - now using EnhancedPromptTemplates
+
+    /// <summary>
+    /// Check if Ollama service is available at the configured base URL
+    /// </summary>
+    public async Task<bool> IsServiceAvailableAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            _logger.LogInformation("Checking Ollama service availability at {BaseUrl}", _baseUrl);
+
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(TimeSpan.FromSeconds(5));
+
+            var response = await _httpClient.GetAsync($"{_baseUrl}/api/version", cts.Token);
+            
+            if (response.IsSuccessStatusCode)
+            {
+                _logger.LogInformation("Ollama service detected at {BaseUrl}", _baseUrl);
+                return true;
+            }
+
+            _logger.LogWarning("Ollama service responded but with status code {StatusCode}", response.StatusCode);
+            return false;
+        }
+        catch (TaskCanceledException)
+        {
+            _logger.LogInformation("Ollama service not available at {BaseUrl} (timeout)", _baseUrl);
+            return false;
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogInformation("Ollama service not available at {BaseUrl}: {Message}", _baseUrl, ex.Message);
+            return false;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error checking Ollama service availability at {BaseUrl}", _baseUrl);
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Get list of available models from Ollama
+    /// </summary>
+    public async Task<List<OllamaModelInfo>> GetAvailableModelsAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            _logger.LogInformation("Fetching available Ollama models from {BaseUrl}/api/tags", _baseUrl);
+
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(TimeSpan.FromSeconds(10));
+
+            var response = await _httpClient.GetAsync($"{_baseUrl}/api/tags", cts.Token);
+            response.EnsureSuccessStatusCode();
+
+            var content = await response.Content.ReadAsStringAsync(ct);
+            var tagsDoc = JsonDocument.Parse(content);
+
+            var models = new List<OllamaModelInfo>();
+
+            if (tagsDoc.RootElement.TryGetProperty("models", out var modelsArray) &&
+                modelsArray.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var modelElement in modelsArray.EnumerateArray())
+                {
+                    var name = modelElement.TryGetProperty("name", out var nameProp)
+                        ? nameProp.GetString() ?? ""
+                        : "";
+                    
+                    var size = modelElement.TryGetProperty("size", out var sizeProp)
+                        ? sizeProp.GetInt64()
+                        : 0;
+
+                    var modifiedAt = modelElement.TryGetProperty("modified_at", out var modifiedProp)
+                        ? modifiedProp.GetString()
+                        : null;
+
+                    if (!string.IsNullOrEmpty(name))
+                    {
+                        DateTime? parsedDate = null;
+                        if (!string.IsNullOrEmpty(modifiedAt) && DateTime.TryParse(modifiedAt, out var dt))
+                        {
+                            parsedDate = dt;
+                        }
+
+                        models.Add(new OllamaModelInfo
+                        {
+                            Name = name,
+                            Size = size,
+                            Modified = parsedDate
+                        });
+                    }
+                }
+            }
+
+            _logger.LogInformation("Found {Count} Ollama models", models.Count);
+            return models;
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogWarning(ex, "Failed to fetch Ollama models from {BaseUrl}", _baseUrl);
+            return new List<OllamaModelInfo>();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error fetching Ollama models from {BaseUrl}", _baseUrl);
+            return new List<OllamaModelInfo>();
+        }
+    }
+
+    /// <summary>
+    /// Generate script with proper error handling for missing models
+    /// </summary>
+    public async Task<Script> GenerateScriptAsync(Brief brief, PlanSpec spec, CancellationToken ct)
+    {
+        _logger.LogInformation("Generating script with Ollama (model: {Model}) at {BaseUrl} for topic: {Topic}", 
+            _model, _baseUrl, brief.Topic);
+
+        var startTime = DateTime.UtcNow;
+
+        try
+        {
+            // Build enhanced prompt for quality content with user customizations
+            string systemPrompt = EnhancedPromptTemplates.GetSystemPromptForScriptGeneration();
+            string userPrompt = _promptCustomizationService.BuildCustomizedPrompt(brief, spec, brief.PromptModifiers);
+            
+            // Apply enhancement callback if configured
+            if (PromptEnhancementCallback != null)
+            {
+                userPrompt = await PromptEnhancementCallback(userPrompt, brief, spec);
+            }
+            
+            string prompt = $"{systemPrompt}\n\n{userPrompt}";
+
+            // Call Ollama API with JSON format
+            var requestBody = new
+            {
+                model = _model,
+                prompt = prompt,
+                stream = false,
+                format = "json",
+                options = new
+                {
+                    temperature = 0.7,
+                    top_p = 0.9,
+                    num_predict = 2048
+                }
+            };
+
+            var json = JsonSerializer.Serialize(requestBody);
+            var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(TimeSpan.FromSeconds(120)); // 120-second timeout for local models
+
+            var response = await _httpClient.PostAsync($"{_baseUrl}/api/generate", content, cts.Token);
+            
+            // Check for model not found error
+            if (!response.IsSuccessStatusCode)
+            {
+                var errorContent = await response.Content.ReadAsStringAsync(ct);
+                if (errorContent.Contains("model") && errorContent.Contains("not found"))
+                {
+                    throw new InvalidOperationException(
+                        $"Model '{_model}' not found. Please pull the model first using: ollama pull {_model}");
+                }
+                response.EnsureSuccessStatusCode();
+            }
+
+            var responseJson = await response.Content.ReadAsStringAsync(ct);
+            var responseDoc = JsonDocument.Parse(responseJson);
+
+            if (responseDoc.RootElement.TryGetProperty("response", out var responseText))
+            {
+                string scriptText = responseText.GetString() ?? string.Empty;
+                var duration = DateTime.UtcNow - startTime;
+                
+                _logger.LogInformation("Script generated successfully with Ollama ({Length} characters) in {Duration}s", 
+                    scriptText.Length, duration.TotalSeconds);
+                
+                // Track performance if callback configured
+                PerformanceTrackingCallback?.Invoke(75.0, duration, true);
+                
+                // Parse script into structured scenes
+                var scenes = ParseScriptIntoScenes(scriptText, spec);
+                
+                return new Script
+                {
+                    Title = brief.Topic,
+                    Scenes = scenes,
+                    TotalDuration = scenes.Count > 0 
+                        ? TimeSpan.FromSeconds(scenes.Sum(s => s.Duration.TotalSeconds)) 
+                        : spec.TargetDuration,
+                    Metadata = new ScriptMetadata
+                    {
+                        ProviderName = "Ollama",
+                        ModelUsed = _model,
+                        GenerationTime = duration,
+                        TokensUsed = EstimateTokenCount(scriptText),
+                        Tier = ProviderTier.Free
+                    }
+                };
+            }
+
+            _logger.LogWarning("Ollama response did not contain expected 'response' field");
+            throw new Exception("Invalid response from Ollama");
+        }
+        catch (TaskCanceledException ex)
+        {
+            var duration = DateTime.UtcNow - startTime;
+            PerformanceTrackingCallback?.Invoke(0, duration, false);
+            _logger.LogError(ex, "Ollama request timed out after 120 seconds");
+            throw new InvalidOperationException(
+                $"Ollama request timed out after 120s. The model '{_model}' may be loading or Ollama may be overloaded.", ex);
+        }
+        catch (HttpRequestException ex)
+        {
+            var duration = DateTime.UtcNow - startTime;
+            PerformanceTrackingCallback?.Invoke(0, duration, false);
+            _logger.LogError(ex, "Failed to connect to Ollama at {BaseUrl}", _baseUrl);
+            throw new InvalidOperationException(
+                $"Cannot connect to Ollama at {_baseUrl}. Please ensure Ollama is running: 'ollama serve'", ex);
+        }
+    }
+
+    private List<ScriptScene> ParseScriptIntoScenes(string scriptText, PlanSpec spec)
+    {
+        // Simple scene parsing - split by newlines and create scenes
+        var scenes = new List<ScriptScene>();
+        var lines = scriptText.Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
+        
+        int sceneNumber = 1;
+        foreach (var line in lines)
+        {
+            if (!string.IsNullOrWhiteSpace(line))
+            {
+                scenes.Add(new ScriptScene
+                {
+                    Number = sceneNumber++,
+                    Narration = line.Trim(),
+                    Duration = TimeSpan.FromSeconds(5),
+                    Transition = TransitionType.Cut
+                });
+            }
+        }
+        
+        if (scenes.Count == 0)
+        {
+            scenes.Add(new ScriptScene
+            {
+                Number = 1,
+                Narration = scriptText,
+                Duration = spec.TargetDuration,
+                Transition = TransitionType.Cut
+            });
+        }
+        
+        return scenes;
+    }
+
+    private int EstimateTokenCount(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return 0;
+        }
+        return (int)Math.Ceiling(text.Length / 4.0);
+    }
+}
+
+/// <summary>
+/// Information about an Ollama model
+/// </summary>
+public class OllamaModelInfo
+{
+    public string Name { get; set; } = string.Empty;
+    public long Size { get; set; }
+    public DateTime? Modified { get; set; }
 }

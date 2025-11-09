@@ -10,13 +10,22 @@ import {
   useToastController,
   useId,
 } from '@fluentui/react-components';
-import { Copy24Regular } from '@fluentui/react-icons';
+import { Copy24Regular, Dismiss24Regular } from '@fluentui/react-icons';
 
 const useStyles = makeStyles({
   toastFooter: {
     display: 'flex',
     gap: tokens.spacingHorizontalS,
     marginTop: tokens.spacingVerticalS,
+  },
+  toastHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: tokens.spacingHorizontalS,
+  },
+  toastTitleContent: {
+    flex: 1,
   },
 });
 
@@ -34,17 +43,16 @@ export interface ErrorToastOptions {
   intent?: 'error' | 'warning' | 'info';
 }
 
-/**
- * Hook to display error toasts with copy-to-clipboard functionality
- */
 // eslint-disable-next-line react-refresh/only-export-components
 export function useErrorToast() {
   const toasterId = useId('error-toaster');
-  const { dispatchToast } = useToastController(toasterId);
+  const { dispatchToast, dismissToast } = useToastController(toasterId);
   const styles = useStyles();
 
   const showErrorToast = (options: ErrorToastOptions) => {
     const { title, details, intent = 'error' } = options;
+
+    const toastId = `error-toast-${Date.now()}`;
 
     const handleCopyDetails = () => {
       const detailsJson = JSON.stringify(
@@ -58,9 +66,24 @@ export function useErrorToast() {
       navigator.clipboard.writeText(detailsJson);
     };
 
+    const handleDismiss = () => {
+      dismissToast(toastId);
+    };
+
     dispatchToast(
       <Toast>
-        <ToastTitle>{title}</ToastTitle>
+        <div className={styles.toastHeader}>
+          <div className={styles.toastTitleContent}>
+            <ToastTitle>{title}</ToastTitle>
+          </div>
+          <Button
+            size="small"
+            appearance="transparent"
+            icon={<Dismiss24Regular />}
+            onClick={handleDismiss}
+            aria-label="Dismiss notification"
+          />
+        </div>
         <ToastBody>
           <div>
             <div>{details.message}</div>
@@ -87,7 +110,7 @@ export function useErrorToast() {
           </Button>
         </ToastFooter>
       </Toast>,
-      { intent, timeout: 10000 }
+      { intent, timeout: 10000, toastId }
     );
   };
 

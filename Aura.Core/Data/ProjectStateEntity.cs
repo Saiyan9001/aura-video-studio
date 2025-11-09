@@ -20,6 +20,11 @@ public class ProjectStateEntity
     [MaxLength(2000)]
     public string? Description { get; set; }
 
+    /// <summary>
+    /// Current wizard step (0-based index, e.g., 0=Brief, 1=Plan, 2=Voice, 3=Generate)
+    /// </summary>
+    public int CurrentWizardStep { get; set; } = 0;
+
     [Required]
     public string Status { get; set; } = "InProgress"; // InProgress, Completed, Failed, Cancelled
 

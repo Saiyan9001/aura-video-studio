@@ -3,9 +3,13 @@
  * Validates required environment variables before app initialization
  */
 
+import { resolveApiBaseUrl, type ApiBaseUrlSource } from '../config/apiBaseUrl';
+
 interface ValidationResult {
   isValid: boolean;
   errors: string[];
+  resolvedApiBaseUrl: string;
+  source: ApiBaseUrlSource;
 }
 
 /**
@@ -19,6 +23,18 @@ export function validateEnvironment(): void {
     const errorMessage = createErrorMessage(result.errors);
     throw new Error(errorMessage);
   }
+
+  // Surface informational message when falling back to automatic resolution
+  if (typeof console !== 'undefined' && result.source !== 'env') {
+    const sourceDescription =
+      result.source === 'origin'
+        ? 'the current browser origin'
+        : 'the default development fallback (http://127.0.0.1:5005)';
+
+    console.info(
+      `[Environment] VITE_API_BASE_URL not configured. Using ${sourceDescription}: ${result.resolvedApiBaseUrl}`
+    );
+  }
 }
 
 /**
@@ -26,40 +42,54 @@ export function validateEnvironment(): void {
  */
 function checkEnvironment(): ValidationResult {
   const errors: string[] = [];
+  const resolution = resolveApiBaseUrl();
 
-  // Check VITE_API_BASE_URL is defined
-  const apiBaseUrl = import.meta.env.VITE_API_BASE_URL;
-
-  if (!apiBaseUrl) {
-    errors.push('VITE_API_BASE_URL is not defined');
-  } else if (typeof apiBaseUrl !== 'string' || apiBaseUrl.trim() === '') {
-    errors.push('VITE_API_BASE_URL is empty');
-  } else {
-    // Validate it's a valid URL or relative path
-    // Allow relative paths like "/api" for same-origin deployments
-    if (apiBaseUrl.startsWith('/')) {
-      // Relative path - this is valid for same-origin deployments
-      // No further validation needed
-    } else {
-      // Must be a full URL
-      try {
-        const url = new URL(apiBaseUrl);
-        // Ensure it's HTTP or HTTPS
-        if (!['http:', 'https:'].includes(url.protocol)) {
-          errors.push(
-            `VITE_API_BASE_URL has invalid protocol "${url.protocol}" (must be http: or https:)`
-          );
-        }
-      } catch (e) {
-        errors.push(`VITE_API_BASE_URL is not a valid URL or path: "${apiBaseUrl}"`);
-      }
-    }
-  }
+  validateApiBaseUrl(resolution.value, resolution.source, errors);
 
   return {
     isValid: errors.length === 0,
     errors,
+    resolvedApiBaseUrl: resolution.value,
+    source: resolution.source,
   };
+}
+
+function validateApiBaseUrl(value: string, source: ApiBaseUrlSource, errors: string[]): void {
+  if (!value || value.trim().length === 0) {
+    errors.push('API base URL could not be resolved');
+    return;
+  }
+
+  // Allow relative paths when explicitly provided via environment configuration
+  if (source === 'env' && value.startsWith('/')) {
+    return;
+  }
+
+  try {
+    const isRelativePath = value.startsWith('/');
+    const baseForRelative =
+      isRelativePath && typeof window !== 'undefined'
+        ? window.location.origin
+        : isRelativePath
+          ? 'http://127.0.0.1'
+          : undefined;
+
+    const url = new URL(value, baseForRelative);
+
+    if (!['http:', 'https:'].includes(url.protocol)) {
+      errors.push(
+        `${source === 'env' ? 'VITE_API_BASE_URL' : 'Resolved API base URL'} has invalid protocol "${
+          url.protocol
+        }" (must be http: or https:)`
+      );
+    }
+  } catch (error) {
+    errors.push(
+      `${
+        source === 'env' ? 'VITE_API_BASE_URL' : 'Resolved API base URL'
+      } is not a valid URL or path: "${value}"`
+    );
+  }
 }
 
 /**
@@ -72,27 +102,23 @@ function createErrorMessage(errors: string[]): string {
 Environment Configuration Error
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-The application cannot start due to missing or invalid environment variables:
+The application cannot start due to missing or invalid environment configuration:
 
 ${errorList}
 
 How to fix:
 ━━━━━━━━━━━━
 
-1. Create a file named ".env.local" in the Aura.Web directory
-2. Add the following line to the file:
+If you want to target a different API origin, create a file named ".env.local"
+in the Aura.Web directory and add the following line (adjust as needed):
 
    VITE_API_BASE_URL=http://127.0.0.1:5005
 
-   For production deployments, use your production API URL:
+For production deployments, use your production API URL:
+
    VITE_API_BASE_URL=https://your-api-domain.com
 
-3. Save the file and restart the development server
-
-Example .env.local file contents:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-VITE_API_BASE_URL=http://127.0.0.1:5005
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Save the file and rebuild or restart the application after making changes.
 
 Note: The .env.local file should NOT be committed to version control.
 It's already listed in .gitignore.

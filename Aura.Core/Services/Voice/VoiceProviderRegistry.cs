@@ -54,6 +54,24 @@ public class VoiceProviderRegistry
     {
         return System.Array.Empty<string>();
     }
+
+    /// <summary>
+    /// Get voice descriptors for a specific provider
+    /// </summary>
+    public async Task<List<VoiceDescriptor>> GetVoicesForProviderAsync(VoiceProvider provider, System.Threading.CancellationToken ct)
+    {
+        await System.Threading.Tasks.Task.CompletedTask;
+        return new List<VoiceDescriptor>();
+    }
+
+    /// <summary>
+    /// Get all available voice descriptors across all providers
+    /// </summary>
+    public async Task<List<VoiceDescriptor>> GetAllAvailableVoicesAsync(System.Threading.CancellationToken ct)
+    {
+        await System.Threading.Tasks.Task.CompletedTask;
+        return new List<VoiceDescriptor>();
+    }
 }
 
 /// <summary>

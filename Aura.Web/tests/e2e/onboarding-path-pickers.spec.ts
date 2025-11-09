@@ -89,11 +89,11 @@ test.describe('Onboarding with Path Pickers', () => {
     });
 
     // Navigate to first-run wizard
-    await page.goto('/onboarding');
+    await page.goto('/setup');
 
     // Step 0: Mode Selection
     await expect(page.getByRole('heading', { name: 'First-Run Setup' })).toBeVisible();
-    
+
     // Select Free-Only mode
     const freeCard = page.locator('text=Free-Only Mode').locator('..');
     await freeCard.click();
@@ -228,7 +228,7 @@ test.describe('Onboarding with Path Pickers', () => {
     });
 
     // Navigate to first-run wizard
-    await page.goto('/onboarding');
+    await page.goto('/setup');
 
     // Select Local mode
     const localCard = page.locator('text=Local Mode').locator('..');
@@ -250,11 +250,15 @@ test.describe('Onboarding with Path Pickers', () => {
 
     // Fill in existing SD path
     await page.getByLabel(/install path/i).fill('C:\\Tools\\stable-diffusion-webui');
-    await page.getByLabel(/executable path/i).fill('C:\\Tools\\stable-diffusion-webui\\webui-user.bat');
+    await page
+      .getByLabel(/executable path/i)
+      .fill('C:\\Tools\\stable-diffusion-webui\\webui-user.bat');
 
     // Attach
     await page.getByRole('button', { name: /attach & validate/i }).click();
-    await expect(page.getByText(/Use Existing.*Stable Diffusion/i)).not.toBeVisible({ timeout: 5000 });
+    await expect(page.getByText(/Use Existing.*Stable Diffusion/i)).not.toBeVisible({
+      timeout: 5000,
+    });
 
     // Continue to validation
     await page.getByRole('button', { name: 'Next' }).click();
@@ -298,7 +302,7 @@ test.describe('Onboarding with Path Pickers', () => {
       });
     });
 
-    await page.goto('/onboarding');
+    await page.goto('/setup');
 
     // Navigate to step 2
     await page.getByRole('button', { name: 'Next' }).click();
@@ -308,7 +312,7 @@ test.describe('Onboarding with Path Pickers', () => {
     // Look for optional items with Skip button
     const skipButtons = page.getByRole('button', { name: /skip/i });
     const count = await skipButtons.count();
-    
+
     // At least one optional component should have skip button
     expect(count).toBeGreaterThan(0);
 
@@ -330,7 +334,7 @@ test.describe('Onboarding with Path Pickers', () => {
       });
     });
 
-    await page.goto('/onboarding');
+    await page.goto('/setup');
 
     // Navigate to step 2
     await page.getByRole('button', { name: 'Next' }).click();

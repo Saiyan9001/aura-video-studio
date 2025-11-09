@@ -6,7 +6,7 @@
 export const ROUTES = {
   HOME: '/',
   SETUP: '/setup',
-  ONBOARDING: '/onboarding',
+  ONBOARDING: '/onboarding', // Legacy route, redirects to SETUP
   DASHBOARD: '/dashboard',
   IDEATION: '/ideation',
   TRENDING: '/trending',

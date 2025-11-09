@@ -215,7 +215,9 @@ export function validateBriefRequest(request: {
     return { valid: true, errors: [] };
   }
 
-  const errors = result.error.errors.map((err: z.ZodIssue) => `${err.path.join('.')}: ${err.message}`);
+  const errors = result.error.errors.map(
+    (err: z.ZodIssue) => `${err.path.join('.')}: ${err.message}`
+  );
 
   return { valid: false, errors };
 }
@@ -246,9 +248,13 @@ export const apiKeysSchema = z.object({
   openai: z
     .string()
     .optional()
-    .refine((val: string | undefined) => !val || val.length === 0 || (val.startsWith('sk-') && val.length > 20), {
-      message: 'OpenAI API key must start with "sk-" and be at least 20 characters',
-    }),
+    .refine(
+      (val: string | undefined) =>
+        !val || val.length === 0 || (val.startsWith('sk-') && val.length > 20),
+      {
+        message: 'OpenAI API key must start with "sk-" and be at least 20 characters',
+      }
+    ),
   elevenlabs: z
     .string()
     .optional()
@@ -276,9 +282,13 @@ export const apiKeysSchema = z.object({
   stabilityai: z
     .string()
     .optional()
-    .refine((val: string | undefined) => !val || val.length === 0 || (val.startsWith('sk-') && val.length > 20), {
-      message: 'Stability AI API key must start with "sk-" and be at least 20 characters',
-    }),
+    .refine(
+      (val: string | undefined) =>
+        !val || val.length === 0 || (val.startsWith('sk-') && val.length > 20),
+      {
+        message: 'Stability AI API key must start with "sk-" and be at least 20 characters',
+      }
+    ),
 });
 
 /**
@@ -288,15 +298,21 @@ export const providerPathsSchema = z.object({
   stableDiffusionUrl: z
     .string()
     .optional()
-    .refine((val: string | undefined) => !val || val.length === 0 || /^https?:\/\/.+:\d+/.test(val), {
-      message: 'Must be a valid URL with protocol and port (e.g., http://127.0.0.1:7860)',
-    }),
+    .refine(
+      (val: string | undefined) => !val || val.length === 0 || /^https?:\/\/.+:\d+/.test(val),
+      {
+        message: 'Must be a valid URL with protocol and port (e.g., http://127.0.0.1:7860)',
+      }
+    ),
   ollamaUrl: z
     .string()
     .optional()
-    .refine((val: string | undefined) => !val || val.length === 0 || /^https?:\/\/.+:\d+/.test(val), {
-      message: 'Must be a valid URL with protocol and port (e.g., http://127.0.0.1:11434)',
-    }),
+    .refine(
+      (val: string | undefined) => !val || val.length === 0 || /^https?:\/\/.+:\d+/.test(val),
+      {
+        message: 'Must be a valid URL with protocol and port (e.g., http://127.0.0.1:11434)',
+      }
+    ),
   ffmpegPath: z
     .string()
     .optional()
@@ -347,9 +363,24 @@ export const securityValidators = {
     z.string().refine(
       (val: string) => {
         const injectionPatterns = [
-          /ignore\s+(all\s+)?(previous|prior|above)\s+(instructions?|commands?|rules?)/i,
-          /disregard\s+(all\s+)?(previous|prior|above)\s+(instructions?|commands?|rules?)/i,
-          /forget\s+(all\s+)?(previous|prior|above)\s+(instructions?|commands?|rules?)/i,
+          /ignore\s+all\s+previous\s+instruction/i,
+          /ignore\s+previous\s+instruction/i,
+          /ignore\s+all\s+prior\s+instruction/i,
+          /ignore\s+prior\s+instruction/i,
+          /ignore\s+all\s+above\s+instruction/i,
+          /ignore\s+above\s+instruction/i,
+          /disregard\s+all\s+previous\s+instruction/i,
+          /disregard\s+previous\s+instruction/i,
+          /disregard\s+all\s+prior\s+instruction/i,
+          /disregard\s+prior\s+instruction/i,
+          /disregard\s+all\s+above\s+instruction/i,
+          /disregard\s+above\s+instruction/i,
+          /forget\s+all\s+previous\s+instruction/i,
+          /forget\s+previous\s+instruction/i,
+          /forget\s+all\s+prior\s+instruction/i,
+          /forget\s+prior\s+instruction/i,
+          /forget\s+all\s+above\s+instruction/i,
+          /forget\s+above\s+instruction/i,
           /system\s*:\s*/i,
           /<\|im_start\|>/i,
           /<\|im_end\|>/i,
@@ -393,7 +424,10 @@ export const securityValidators = {
           const code = char.charCodeAt(0);
           // Control chars are 0-31 and 127-159
           // Allow: 9 (tab), 10 (newline), 13 (carriage return), 32+ (printable)
-          if ((code < 32 && code !== 9 && code !== 10 && code !== 13) || (code >= 127 && code <= 159)) {
+          if (
+            (code < 32 && code !== 9 && code !== 10 && code !== 13) ||
+            (code >= 127 && code <= 159)
+          ) {
             return false;
           }
         }
@@ -417,24 +451,21 @@ export const secureBriefSchema = z.object({
   audience: z
     .string()
     .optional()
-    .refine(
-      (val: string | undefined) => !val || val.length <= 200,
-      { message: 'Audience must not exceed 200 characters' }
-    ),
+    .refine((val: string | undefined) => !val || val.length <= 200, {
+      message: 'Audience must not exceed 200 characters',
+    }),
   goal: z
     .string()
     .optional()
-    .refine(
-      (val: string | undefined) => !val || val.length <= 300,
-      { message: 'Goal must not exceed 300 characters' }
-    ),
+    .refine((val: string | undefined) => !val || val.length <= 300, {
+      message: 'Goal must not exceed 300 characters',
+    }),
   tone: z
     .string()
     .optional()
-    .refine(
-      (val: string | undefined) => !val || val.length <= 100,
-      { message: 'Tone must not exceed 100 characters' }
-    ),
+    .refine((val: string | undefined) => !val || val.length <= 100, {
+      message: 'Tone must not exceed 100 characters',
+    }),
   language: z.string().optional(),
   durationMinutes: z
     .number()
@@ -489,7 +520,7 @@ export function validateFileUpload(
   // Check extension
   const fileName = file.name.toLowerCase();
   const hasValidExtension = extensions.some((ext) => fileName.endsWith(ext));
-  
+
   if (!hasValidExtension) {
     return {
       valid: false,

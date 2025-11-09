@@ -117,7 +117,7 @@ class MemoryLeakDetector {
       // eslint-disable-next-line no-console
       console.group('⚠️ Potential Memory Leaks Detected');
       detectedLeaks.forEach(({ pattern, details }) => {
-        console.warn(`${pattern}: ${details}`); // eslint-disable-line no-console
+        console.warn(`${pattern}: ${details}`);
       });
       console.log('Run window.__AURA_MEMORY_REPORT__() for more details'); // eslint-disable-line no-console
       // eslint-disable-next-line no-console

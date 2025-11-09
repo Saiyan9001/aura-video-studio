@@ -260,9 +260,9 @@ public class ImageProviderFactory
         {
             throw new ProviderException(
                 "None",
-                "IMAGE",
+                ProviderType.Visual,
                 "No image providers available",
-                "Image generation requires at least one configured provider. Please add API keys in Settings → Providers.");
+                userMessage: "Image generation requires at least one configured provider. Please add API keys in Settings → Providers.");
         }
 
         return new FallbackImageProvider(providers.Values, _logger);
@@ -299,7 +299,7 @@ internal class TimeoutImageProviderWrapper : IImageProvider
         catch (OperationCanceledException) when (!ct.IsCancellationRequested)
         {
             // Timeout occurred (not user cancellation)
-            throw ProviderException.Timeout(_providerName, "IMAGE", (int)_timeout.TotalSeconds);
+            throw ProviderException.Timeout(_providerName, ProviderType.Visual, (int)_timeout.TotalSeconds);
         }
     }
 }
@@ -342,9 +342,9 @@ internal class FallbackImageProvider : IImageProvider
         // All providers failed
         throw new ProviderException(
             "FallbackChain",
-            "IMAGE",
+            ProviderType.Visual,
             $"All {providerList.Count} image providers failed",
-            "Unable to generate image. All configured providers encountered errors.",
+            userMessage: "Unable to generate image. All configured providers encountered errors.",
             innerException: lastException);
     }
 }

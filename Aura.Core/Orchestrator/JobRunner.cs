@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Aura.Core.Artifacts;
+using Aura.Core.Hardware;
 using Aura.Core.Models;
 using Aura.Core.Models.Events;
 using Aura.Core.Providers;
@@ -22,10 +23,12 @@ public class JobRunner
     private readonly ILogger<JobRunner> _logger;
     private readonly ArtifactManager _artifactManager;
     private readonly VideoOrchestrator _orchestrator;
-    private readonly Aura.Core.Hardware.HardwareDetector _hardwareDetector;
+    private readonly IHardwareDetector _hardwareDetector;
     private readonly Services.CheckpointManager? _checkpointManager;
     private readonly Services.CleanupService? _cleanupService;
     private readonly RunTelemetryCollector _telemetryCollector;
+    private readonly Services.JobQueueService? _jobQueueService;
+    private readonly Services.ProgressEstimator _progressEstimator;
     private readonly Dictionary<string, Job> _activeJobs = new();
     private readonly Dictionary<string, CancellationTokenSource> _jobCancellationTokens = new();
     private readonly Dictionary<string, Guid> _jobProjectIds = new();
@@ -36,10 +39,12 @@ public class JobRunner
         ILogger<JobRunner> logger,
         ArtifactManager artifactManager,
         VideoOrchestrator orchestrator,
-        Aura.Core.Hardware.HardwareDetector hardwareDetector,
+        IHardwareDetector hardwareDetector,
         RunTelemetryCollector telemetryCollector,
         Services.CheckpointManager? checkpointManager = null,
-        Services.CleanupService? cleanupService = null)
+        Services.CleanupService? cleanupService = null,
+        Services.JobQueueService? jobQueueService = null,
+        Services.ProgressEstimator? progressEstimator = null)
     {
         ArgumentNullException.ThrowIfNull(logger);
         ArgumentNullException.ThrowIfNull(artifactManager);
@@ -54,6 +59,8 @@ public class JobRunner
         _telemetryCollector = telemetryCollector;
         _checkpointManager = checkpointManager;
         _cleanupService = cleanupService;
+        _jobQueueService = jobQueueService;
+        _progressEstimator = progressEstimator ?? new Services.ProgressEstimator();
     }
 
     /// <summary>
@@ -65,6 +72,7 @@ public class JobRunner
         VoiceSpec voiceSpec,
         RenderSpec renderSpec,
         string? correlationId = null,
+        bool isQuickDemo = false,
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(brief);
@@ -73,7 +81,8 @@ public class JobRunner
         ArgumentNullException.ThrowIfNull(renderSpec);
         
         var jobId = Guid.NewGuid().ToString();
-        _logger.LogInformation("Creating new job with ID: {JobId}, Topic: {Topic}", jobId, brief.Topic);
+        _logger.LogInformation("Creating new job with ID: {JobId}, Topic: {Topic}, IsQuickDemo: {IsQuickDemo}", 
+            jobId, brief.Topic, isQuickDemo);
         
         var nowUtc = DateTime.UtcNow;
         var job = new Job
@@ -87,7 +96,8 @@ public class JobRunner
             VoiceSpec = voiceSpec,
             RenderSpec = renderSpec,
             CreatedUtc = nowUtc,
-            QueuedUtc = nowUtc
+            QueuedUtc = nowUtc,
+            IsQuickDemo = isQuickDemo
         };
 
         _activeJobs[job.Id] = job;
@@ -173,6 +183,61 @@ public class JobRunner
     }
 
     /// <summary>
+    /// Retries a failed job with exponential backoff
+    /// </summary>
+    public async Task<bool> RetryJobAsync(string jobId, CancellationToken ct = default)
+    {
+        var job = GetJob(jobId);
+        if (job == null)
+        {
+            _logger.LogWarning("Cannot retry job {JobId}: job not found", jobId);
+            return false;
+        }
+
+        if (job.Status != JobStatus.Failed)
+        {
+            _logger.LogWarning("Cannot retry job {JobId}: job has not failed (status: {Status})", 
+                jobId, job.Status);
+            return false;
+        }
+
+        // Check if retry is allowed
+        if (_jobQueueService != null && !_jobQueueService.CanRetryJob(jobId))
+        {
+            _logger.LogWarning("Cannot retry job {JobId}: max retry count reached or backoff not elapsed", 
+                jobId);
+            return false;
+        }
+
+        _logger.LogInformation("Retrying job {JobId}", jobId);
+
+        // Create a new job with same parameters
+        if (job.Brief != null && job.PlanSpec != null && job.VoiceSpec != null && job.RenderSpec != null)
+        {
+            var retriedJob = await CreateAndStartJobAsync(
+                job.Brief,
+                job.PlanSpec,
+                job.VoiceSpec,
+                job.RenderSpec,
+                job.CorrelationId,
+                job.IsQuickDemo,
+                ct
+            );
+
+            // Record retry in queue service
+            if (_jobQueueService != null)
+            {
+                await _jobQueueService.RetryJobAsync(jobId, priority: 3, ct);
+            }
+
+            return true;
+        }
+
+        _logger.LogWarning("Cannot retry job {JobId}: missing job parameters", jobId);
+        return false;
+    }
+
+    /// <summary>
     /// Executes a job through all stages.
     /// </summary>
     private async Task ExecuteJobAsync(string jobId, CancellationToken ct)
@@ -232,7 +297,7 @@ public class JobRunner
                 jobId, systemProfile.Tier, systemProfile.LogicalCores, systemProfile.RamGB, 
                 systemProfile.Gpu?.Model ?? "None");
 
-            // Create progress reporter with detailed stage tracking
+            // Create progress reporter with detailed stage tracking and ETA estimation
             var progress = new Progress<string>(message =>
             {
                 _logger.LogInformation("[Job {JobId}] {Message}", jobId, message);
@@ -240,14 +305,43 @@ public class JobRunner
                 // Determine stage and progress from message
                 var (stage, percent, progressMsg) = ParseProgressMessage(message, job.Stage, job.Percent);
                 
+                // Record progress for ETA calculation
+                _progressEstimator.RecordProgress(jobId, percent, DateTime.UtcNow);
+                
+                // Calculate ETA and elapsed time
+                var eta = _progressEstimator.EstimateTimeRemaining(jobId, percent);
+                var elapsed = _progressEstimator.CalculateElapsedTime(jobId);
+                
                 job = UpdateJob(job, 
                     stage: stage,
                     percent: percent,
                     logs: new List<string>(job.Logs) { $"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss}] {message}" },
-                    progressMessage: progressMsg);
+                    progressMessage: progressMsg,
+                    eta: eta);
             });
 
-            // Execute orchestrator with system profile
+            // Create detailed progress reporter
+            var detailedProgress = new Progress<GenerationProgress>(generationProgress =>
+            {
+                _logger.LogInformation("[Job {JobId}] Stage: {Stage}, Overall: {Overall}%, {Message}", 
+                    jobId, generationProgress.Stage, generationProgress.OverallPercent, generationProgress.Message);
+                
+                // Update job with detailed progress
+                job = UpdateJobWithProgress(job, generationProgress);
+                
+                // Raise event for SSE streaming
+                JobProgress?.Invoke(this, new JobProgressEventArgs 
+                { 
+                    JobId = jobId,
+                    Stage = generationProgress.Stage,
+                    Progress = (int)Math.Round(generationProgress.OverallPercent),
+                    Status = job.Status,
+                    Message = generationProgress.Message,
+                    CorrelationId = job.CorrelationId ?? string.Empty
+                });
+            });
+
+            // Execute orchestrator with system profile and detailed progress
             var outputPath = await _orchestrator.GenerateVideoAsync(
                 job.Brief!,
                 job.PlanSpec!,
@@ -255,9 +349,11 @@ public class JobRunner
                 job.RenderSpec!,
                 systemProfile,
                 progress,
+                detailedProgress,
                 ct,
                 jobId,
-                job.CorrelationId
+                job.CorrelationId,
+                job.IsQuickDemo
             ).ConfigureAwait(false);
 
             // Add final artifact
@@ -283,13 +379,20 @@ public class JobRunner
             {
                 _logger.LogInformation("Telemetry data persisted to {Path}", telemetryPath);
             }
+            
+            // Clear progress estimation history
+            _progressEstimator.ClearHistory(jobId);
+            
+            // Clear retry state if job queue service is available
+            _jobQueueService?.ClearRetryState(jobId);
 
-            // Mark as done
+            // Mark as done with output path
             job = UpdateJob(job, 
                 status: JobStatus.Done, 
                 percent: 100, 
                 stage: "Complete",
                 artifacts: artifacts,
+                outputPath: outputPath,
                 finishedAt: DateTime.UtcNow,
                 completedUtc: DateTime.UtcNow);
 
@@ -336,6 +439,9 @@ public class JobRunner
                 {
                     _logger.LogInformation("Telemetry data persisted for cancelled job {JobId} to {Path}", jobId, telemetryPath);
                 }
+                
+                // Clear progress estimation history
+                _progressEstimator.ClearHistory(jobId);
                 
                 // Add cancellation message to logs so it's visible in UI
                 var cancelLog = $"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss}] Job was cancelled by user - cleanup completed";
@@ -393,6 +499,9 @@ public class JobRunner
                     _logger.LogInformation("Telemetry data persisted for failed job {JobId} to {Path}", jobId, telemetryPath);
                 }
                 
+                // Clear progress estimation history
+                _progressEstimator.ClearHistory(jobId);
+                
                 // Add detailed validation errors to logs
                 var errorLog = $"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss}] VALIDATION ERROR: {vex.Message}";
                 var updatedLogs = new List<string>(job.Logs) { errorLog };
@@ -442,6 +551,9 @@ public class JobRunner
                     _logger.LogInformation("Telemetry data persisted for failed job {JobId} to {Path}", jobId, telemetryPath);
                 }
                 
+                // Clear progress estimation history
+                _progressEstimator.ClearHistory(jobId);
+                
                 var failureDetails = CreateFailureDetails(job, ex);
                 
                 // Add error to logs so it's visible in UI
@@ -486,6 +598,52 @@ public class JobRunner
     }
 
     /// <summary>
+    /// Updates a job with detailed progress information and persists changes.
+    /// </summary>
+    private Job UpdateJobWithProgress(
+        Job job,
+        GenerationProgress generationProgress)
+    {
+        // Add to progress history
+        var updatedHistory = new List<GenerationProgress>(job.ProgressHistory) { generationProgress };
+        
+        // Calculate percent from overall progress
+        var percent = (int)Math.Round(generationProgress.OverallPercent);
+        
+        // Build log message from progress
+        var logMessage = generationProgress.SubstageDetail != null 
+            ? $"{generationProgress.Message} - {generationProgress.SubstageDetail}"
+            : generationProgress.Message;
+        var logs = new List<string>(job.Logs) 
+        { 
+            $"[{DateTime.UtcNow:yyyy-MM-dd HH:mm:ss}] {logMessage}" 
+        };
+        
+        // Update using existing method
+        var updatedJob = UpdateJob(
+            job,
+            stage: generationProgress.Stage,
+            percent: percent,
+            logs: logs,
+            progressMessage: generationProgress.Message,
+            eta: generationProgress.EstimatedTimeRemaining
+        );
+        
+        // Add progress history and current progress
+        var finalJob = updatedJob with
+        {
+            ProgressHistory = updatedHistory,
+            CurrentProgress = generationProgress
+        };
+        
+        // Update active jobs and persist
+        _activeJobs[finalJob.Id] = finalJob;
+        _artifactManager.SaveJob(finalJob);
+        
+        return finalJob;
+    }
+
+    /// <summary>
     /// Updates a job and persists changes with state validation and monotonic progress.
     /// </summary>
     private Job UpdateJob(
@@ -502,7 +660,8 @@ public class JobRunner
         string? progressMessage = null,
         DateTime? startedUtc = null,
         DateTime? completedUtc = null,
-        DateTime? canceledUtc = null)
+        DateTime? canceledUtc = null,
+        string? outputPath = null)
     {
         // Validate state transition if status is changing
         var newStatus = status ?? job.Status;
@@ -543,7 +702,8 @@ public class JobRunner
             StartedUtc = startedUtc ?? job.StartedUtc,
             CompletedUtc = completedUtc ?? job.CompletedUtc,
             CanceledUtc = canceledUtc ?? job.CanceledUtc,
-            EndedUtc = endedUtc
+            EndedUtc = endedUtc,
+            OutputPath = outputPath ?? job.OutputPath
         };
 
         _activeJobs[job.Id] = updated;

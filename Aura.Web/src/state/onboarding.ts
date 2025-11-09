@@ -760,40 +760,86 @@ export async function validateApiKeyThunk(
 
     // For OpenAI, use the new live validation endpoint
     if (provider.toLowerCase() === 'openai') {
-      const response = await fetch(apiUrl('/api/providers/openai/validate'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          apiKey: apiKey.trim(),
-        }),
-      });
+      try {
+        const response = await fetch(apiUrl('/api/providers/openai/validate'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            apiKey: apiKey.trim(),
+          }),
+        });
 
-      // Handle both successful validation and error responses
-      const data = await response.json();
+        // Handle both successful validation and error responses
+        if (!response.ok) {
+          // If response is not ok, try to parse error
+          let errorMessage = 'API key validation failed';
+          try {
+            const errorData = await response.json();
+            errorMessage = errorData.detail || errorData.message || errorData.title || errorMessage;
+          } catch {
+            errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+          }
 
-      // Check for successful validation (only isValid === true is considered success)
-      if (response.ok && data.isValid === true) {
+          console.error('[OpenAI Validation] Error response:', {
+            status: response.status,
+            statusText: response.statusText,
+            errorMessage,
+          });
+
+          dispatch({
+            type: 'API_KEY_INVALID',
+            payload: {
+              provider,
+              error: errorMessage,
+            },
+          });
+          return;
+        }
+
+        const data = await response.json();
+
+        console.log('[OpenAI Validation] Response:', {
+          ok: response.ok,
+          status: response.status,
+          isValid: data.isValid,
+          message: data.message,
+          fullData: data,
+        });
+
+        // Check for successful validation (only isValid === true is considered success)
+        if (data.isValid === true) {
+          dispatch({
+            type: 'API_KEY_VALID',
+            payload: {
+              provider,
+              accountInfo: data.message || 'API key validated successfully with OpenAI',
+            },
+          });
+          return;
+        }
+
+        // Handle validation failure
+        const errorMessage = data.message || 'API key validation failed';
+
         dispatch({
-          type: 'API_KEY_VALID',
+          type: 'API_KEY_INVALID',
           payload: {
             provider,
-            accountInfo: data.message || 'API key validated successfully with OpenAI',
+            error: errorMessage,
+          },
+        });
+        return;
+      } catch (networkError) {
+        console.error('[OpenAI Validation] Network error:', networkError);
+        dispatch({
+          type: 'API_KEY_INVALID',
+          payload: {
+            provider,
+            error: 'Network error: Could not reach validation service. Please check your internet connection.',
           },
         });
         return;
       }
-
-      // Handle error responses (ProblemDetails or validation response)
-      const errorMessage = data.detail || data.message || data.title || 'API key validation failed';
-
-      dispatch({
-        type: 'API_KEY_INVALID',
-        payload: {
-          provider,
-          error: errorMessage,
-        },
-      });
-      return;
     }
 
     // For other providers, use the old validation endpoint

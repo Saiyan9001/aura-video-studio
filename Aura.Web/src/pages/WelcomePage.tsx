@@ -258,7 +258,7 @@ export function WelcomePage() {
             size="large"
             className={styles.primaryOnboardingButton}
             icon={<Rocket24Regular />}
-            onClick={() => navigate('/onboarding')}
+            onClick={() => navigate('/setup')}
           >
             ▶ Start Required Setup Now
           </Button>
@@ -287,7 +287,7 @@ export function WelcomePage() {
             size="large"
             className={styles.secondaryOnboardingButton}
             icon={<Settings24Regular />}
-            onClick={() => navigate('/onboarding')}
+            onClick={() => navigate('/setup')}
           >
             Configure Setup
           </Button>

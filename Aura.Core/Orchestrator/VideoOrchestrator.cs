@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Aura.Core.Errors;
 using Aura.Core.Models;
 using Aura.Core.Models.Audio;
 using Aura.Core.Models.Generation;
@@ -123,7 +124,32 @@ public class VideoOrchestrator
         IProgress<string>? progress = null,
         CancellationToken ct = default,
         string? jobId = null,
-        string? correlationId = null)
+        string? correlationId = null,
+        bool isQuickDemo = false)
+    {
+        // Call overload without detailed progress for backward compatibility
+        return await GenerateVideoAsync(
+            brief, planSpec, voiceSpec, renderSpec, systemProfile,
+            progress, null, ct, jobId, correlationId, isQuickDemo
+        ).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Generates a complete video from the provided brief and specifications using smart orchestration.
+    /// Includes detailed progress reporting via GenerationProgress.
+    /// </summary>
+    public async Task<string> GenerateVideoAsync(
+        Brief brief,
+        PlanSpec planSpec,
+        VoiceSpec voiceSpec,
+        RenderSpec renderSpec,
+        SystemProfile systemProfile,
+        IProgress<string>? progress = null,
+        IProgress<GenerationProgress>? detailedProgress = null,
+        CancellationToken ct = default,
+        string? jobId = null,
+        string? correlationId = null,
+        bool isQuickDemo = false)
     {
         ArgumentNullException.ThrowIfNull(brief);
         ArgumentNullException.ThrowIfNull(planSpec);
@@ -131,10 +157,16 @@ public class VideoOrchestrator
         ArgumentNullException.ThrowIfNull(renderSpec);
         ArgumentNullException.ThrowIfNull(systemProfile);
         
+        var startTime = DateTime.UtcNow;
+        var providerFailures = new List<ProviderException>();
+        
         try
         {
             // Pre-generation validation
-            progress?.Report("Validating system readiness...");
+            var validationMsg = "Validating system readiness...";
+            progress?.Report(validationMsg);
+            detailedProgress?.Report(ProgressBuilder.CreateBriefProgress(0, validationMsg, correlationId));
+            
             var validationResult = await _preGenerationValidator.ValidateSystemReadyAsync(brief, planSpec, ct).ConfigureAwait(false);
             if (!validationResult.IsValid)
             {
@@ -143,17 +175,33 @@ public class VideoOrchestrator
                 throw new ValidationException("System validation failed", validationResult.Issues);
             }
             _logger.LogInformation("Pre-generation validation passed");
+            
+            detailedProgress?.Report(ProgressBuilder.CreateBriefProgress(50, "System validation passed", correlationId));
 
-            progress?.Report("Starting smart video generation pipeline...");
-            _logger.LogInformation("Using smart orchestration for topic: {Topic}", brief.Topic);
+            var pipelineMsg = "Starting smart video generation pipeline...";
+            progress?.Report(pipelineMsg);
+            detailedProgress?.Report(ProgressBuilder.CreateBriefProgress(100, pipelineMsg, correlationId));
+            
+            _logger.LogInformation("Using smart orchestration for topic: {Topic}, IsQuickDemo: {IsQuickDemo}", brief.Topic, isQuickDemo);
 
             // Create task executor that maps generation tasks to providers
-            var taskExecutor = CreateTaskExecutor(brief, planSpec, voiceSpec, renderSpec, ct);
+            var taskExecutor = CreateTaskExecutor(brief, planSpec, voiceSpec, renderSpec, ct, isQuickDemo);
 
-            // Map progress events
+            // Map progress events from orchestration to both string and detailed progress
             var orchestrationProgress = new Progress<OrchestrationProgress>(p =>
             {
                 progress?.Report($"{p.CurrentStage}: {p.ProgressPercentage:F1}%");
+                
+                // Map to detailed progress with stage-specific information
+                if (detailedProgress != null)
+                {
+                    var genProgress = MapOrchestrationProgressToDetailed(
+                        p, 
+                        p.CompletedTasks, 
+                        p.TotalTasks, 
+                        correlationId);
+                    detailedProgress.Report(genProgress);
+                }
             });
 
             // Execute smart orchestration
@@ -163,10 +211,24 @@ public class VideoOrchestrator
 
             if (!result.Succeeded)
             {
+                var elapsedTime = DateTime.UtcNow - startTime;
                 var reasons = string.Join("; ", result.FailureReasons);
-                throw new InvalidOperationException(
-                    $"Generation failed: {result.FailedTasks}/{result.TotalTasks} tasks failed. Reasons: {reasons}"
-                );
+                
+                _logger.LogError(
+                    "Pipeline failed after {ElapsedSeconds}s: {FailedTasks}/{TotalTasks} tasks failed. Reasons: {Reasons}",
+                    elapsedTime.TotalSeconds,
+                    result.FailedTasks,
+                    result.TotalTasks,
+                    reasons);
+                
+                throw new PipelineException(
+                    "Generation",
+                    $"Generation failed: {result.FailedTasks}/{result.TotalTasks} tasks failed. Reasons: {reasons}",
+                    completedTasks: result.TotalTasks - result.FailedTasks,
+                    totalTasks: result.TotalTasks,
+                    correlationId: correlationId,
+                    providerFailures: providerFailures,
+                    elapsedBeforeFailure: elapsedTime);
             }
 
             // Extract final video path from composition task result
@@ -188,10 +250,44 @@ public class VideoOrchestrator
             // Re-throw validation exceptions without wrapping
             throw;
         }
+        catch (ProviderException providerEx)
+        {
+            // Track provider failures and re-throw as pipeline exception
+            providerFailures.Add(providerEx);
+            var elapsedTime = DateTime.UtcNow - startTime;
+            
+            _logger.LogError(
+                providerEx,
+                "Provider {ProviderName} ({ProviderType}) failed with error code {ErrorCode}",
+                providerEx.ProviderName,
+                providerEx.Type,
+                providerEx.SpecificErrorCode);
+            
+            throw new PipelineException(
+                "Provider",
+                $"Provider {providerEx.ProviderName} failed: {providerEx.Message}",
+                correlationId: correlationId,
+                providerFailures: providerFailures,
+                elapsedBeforeFailure: elapsedTime,
+                innerException: providerEx);
+        }
+        catch (PipelineException)
+        {
+            // Re-throw pipeline exceptions without wrapping
+            throw;
+        }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error during smart video generation");
-            throw;
+            var elapsedTime = DateTime.UtcNow - startTime;
+            _logger.LogError(ex, "Error during smart video generation after {ElapsedSeconds}s", elapsedTime.TotalSeconds);
+            
+            throw new PipelineException(
+                "Unknown",
+                $"Unexpected error during video generation: {ex.Message}",
+                correlationId: correlationId,
+                providerFailures: providerFailures,
+                elapsedBeforeFailure: elapsedTime,
+                innerException: ex);
         }
         finally
         {
@@ -211,7 +307,8 @@ public class VideoOrchestrator
         IProgress<string>? progress = null,
         CancellationToken ct = default,
         string? jobId = null,
-        string? correlationId = null)
+        string? correlationId = null,
+        bool isQuickDemo = false)
     {
         ArgumentNullException.ThrowIfNull(brief);
         ArgumentNullException.ThrowIfNull(planSpec);
@@ -253,9 +350,9 @@ public class VideoOrchestrator
                 _telemetryCollector.Record(briefTelemetry);
             }
 
-            // Stage 1: Script generation
+            // Stage 1: Script generation with fallback for Quick Demo
             progress?.Report("Stage 1/5: Generating script...");
-            _logger.LogInformation("Generating script for topic: {Topic}", brief.Topic);
+            _logger.LogInformation("Generating script for topic: {Topic}, IsQuickDemo: {IsQuickDemo}", brief.Topic, isQuickDemo);
             
             var scriptBuilder = jobId != null && correlationId != null 
                 ? Telemetry.TelemetryBuilder.Start(jobId, correlationId, Telemetry.RunStage.Script)
@@ -280,30 +377,47 @@ public class VideoOrchestrator
                 }
             }
             
-            string script = await _retryWrapper.ExecuteWithRetryAsync(
-                async (ctRetry) =>
-                {
-                    var generatedScript = await _llmProvider.DraftScriptAsync(enhancedBrief, planSpec, ctRetry).ConfigureAwait(false);
-                    
-                    // Validate script structure and content
-                    var structuralValidation = _scriptValidator.Validate(generatedScript, planSpec);
-                    var contentValidation = _llmValidator.ValidateScriptContent(generatedScript, planSpec);
-                    
-                    if (!structuralValidation.IsValid || !contentValidation.IsValid)
-                    {
-                        var allIssues = structuralValidation.Issues.Concat(contentValidation.Issues).ToList();
-                        _logger.LogWarning("Script validation failed: {Issues}", string.Join(", ", allIssues));
-                        throw new ValidationException("Script quality validation failed", allIssues);
-                    }
-                    
-                    return generatedScript;
-                },
-                "Script Generation",
-                ct,
-                maxRetries: 2
-            ).ConfigureAwait(false);
+            string script;
+            bool usedFallback = false;
             
-            if (_ragScriptEnhancer != null && brief.RagConfiguration?.TightenClaims == true && ragContext != null)
+            try
+            {
+                script = await _retryWrapper.ExecuteWithRetryAsync(
+                    async (ctRetry) =>
+                    {
+                        var generatedScript = await _llmProvider.DraftScriptAsync(enhancedBrief, planSpec, ctRetry).ConfigureAwait(false);
+                        
+                        // Validate script structure and content
+                        var structuralValidation = _scriptValidator.Validate(generatedScript, planSpec);
+                        var contentValidation = _llmValidator.ValidateScriptContent(generatedScript, planSpec);
+                        
+                        if (!structuralValidation.IsValid || !contentValidation.IsValid)
+                        {
+                            var allIssues = structuralValidation.Issues.Concat(contentValidation.Issues).ToList();
+                            _logger.LogWarning("Script validation failed: {Issues}", string.Join(", ", allIssues));
+                            throw new ValidationException("Script quality validation failed", allIssues);
+                        }
+                        
+                        return generatedScript;
+                    },
+                    "Script Generation",
+                    ct,
+                    maxRetries: 2
+                ).ConfigureAwait(false);
+            }
+            catch (ValidationException vex) when (isQuickDemo)
+            {
+                // For Quick Demo, use safe fallback script instead of failing
+                _logger.LogWarning("Script validation failed for Quick Demo: {Message}. Using safe fallback script.", vex.Message);
+                progress?.Report("Using safe fallback script...");
+                
+                script = GenerateSafeFallbackScript(brief.Topic ?? "Welcome to Aura Video Studio", planSpec.TargetDuration);
+                usedFallback = true;
+                
+                _logger.LogInformation("Safe fallback script generated: {Length} characters", script.Length);
+            }
+            
+            if (_ragScriptEnhancer != null && brief.RagConfiguration?.TightenClaims == true && ragContext != null && !usedFallback)
             {
                 _logger.LogInformation("Performing 'tighten claims' validation pass");
                 var (enhancedScript, warnings) = await _ragScriptEnhancer.TightenClaimsAsync(script, ragContext, ct).ConfigureAwait(false);
@@ -316,7 +430,8 @@ public class VideoOrchestrator
                 script = enhancedScript;
             }
             
-            _logger.LogInformation("Script generated and validated: {Length} characters", script.Length);
+            _logger.LogInformation("Script generated and validated: {Length} characters, UsedFallback: {UsedFallback}", 
+                script.Length, usedFallback);
             
             // Record script generation telemetry
             if (scriptBuilder != null)
@@ -326,6 +441,7 @@ public class VideoOrchestrator
                     .WithStatus(Telemetry.ResultStatus.Ok, message: $"Script generated: {script.Length} characters")
                     .AddMetadata("script_length", script.Length)
                     .AddMetadata("rag_enabled", brief.RagConfiguration?.Enabled == true)
+                    .AddMetadata("used_fallback", usedFallback)
                     .Build();
                 _telemetryCollector.Record(scriptTelemetry);
             }
@@ -810,7 +926,8 @@ public class VideoOrchestrator
         PlanSpec planSpec,
         VoiceSpec voiceSpec,
         RenderSpec renderSpec,
-        CancellationToken outerCt)
+        CancellationToken outerCt,
+        bool isQuickDemo = false)
     {
         // Shared state for task results
         string? generatedScript = null;
@@ -825,29 +942,44 @@ public class VideoOrchestrator
             switch (node.TaskType)
             {
                 case GenerationTaskType.ScriptGeneration:
-                    // Generate script using LLM with retry logic
-                    generatedScript = await _retryWrapper.ExecuteWithRetryAsync(
-                        async (ctRetry) =>
-                        {
-                            var script = await _llmProvider.DraftScriptAsync(brief, planSpec, ctRetry).ConfigureAwait(false);
-                            
-                            // Validate script structure and content
-                            var structuralValidation = _scriptValidator.Validate(script, planSpec);
-                            var contentValidation = _llmValidator.ValidateScriptContent(script, planSpec);
-                            
-                            if (!structuralValidation.IsValid || !contentValidation.IsValid)
+                    // Generate script using LLM with retry logic and fallback for Quick Demo
+                    bool usedFallback = false;
+                    
+                    try
+                    {
+                        generatedScript = await _retryWrapper.ExecuteWithRetryAsync(
+                            async (ctRetry) =>
                             {
-                                var allIssues = structuralValidation.Issues.Concat(contentValidation.Issues).ToList();
-                                _logger.LogWarning("Script validation failed: {Issues}", string.Join(", ", allIssues));
-                                throw new ValidationException("Script quality validation failed", allIssues);
-                            }
-                            
-                            return script;
-                        },
-                        "Script Generation",
-                        ct,
-                        maxRetries: 2 // Try up to 2 times for script generation
-                    ).ConfigureAwait(false);
+                                var script = await _llmProvider.DraftScriptAsync(brief, planSpec, ctRetry).ConfigureAwait(false);
+                                
+                                // Validate script structure and content
+                                var structuralValidation = _scriptValidator.Validate(script, planSpec);
+                                var contentValidation = _llmValidator.ValidateScriptContent(script, planSpec);
+                                
+                                if (!structuralValidation.IsValid || !contentValidation.IsValid)
+                                {
+                                    var allIssues = structuralValidation.Issues.Concat(contentValidation.Issues).ToList();
+                                    _logger.LogWarning("Script validation failed: {Issues}", string.Join(", ", allIssues));
+                                    throw new ValidationException("Script quality validation failed", allIssues);
+                                }
+                                
+                                return script;
+                            },
+                            "Script Generation",
+                            ct,
+                            maxRetries: 2
+                        ).ConfigureAwait(false);
+                    }
+                    catch (ValidationException vex) when (isQuickDemo)
+                    {
+                        // For Quick Demo, use safe fallback script instead of failing
+                        _logger.LogWarning("Script validation failed for Quick Demo: {Message}. Using safe fallback script.", vex.Message);
+                        
+                        generatedScript = GenerateSafeFallbackScript(brief.Topic ?? "Welcome to Aura Video Studio", planSpec.TargetDuration);
+                        usedFallback = true;
+                        
+                        _logger.LogInformation("Safe fallback script generated: {Length} characters", generatedScript.Length);
+                    }
                     
                     _logger.LogInformation("Script generated and validated: {Length} characters", generatedScript.Length);
                     
@@ -1032,6 +1164,71 @@ public class VideoOrchestrator
                 default:
                     throw new NotSupportedException($"Task type {node.TaskType} not supported");
             }
+        };
+    }
+    
+    /// <summary>
+    /// Generates a minimal, safe fallback script for Quick Demo when LLM generation fails.
+    /// Creates 2-3 short scenes with simple narration that doesn't rely on image providers.
+    /// </summary>
+    private string GenerateSafeFallbackScript(string topic, TimeSpan targetDuration)
+    {
+        _logger.LogInformation("Generating safe fallback script for topic: {Topic}, duration: {Duration}s", 
+            topic, targetDuration.TotalSeconds);
+        
+        // Sanitize topic to prevent script injection - remove any markdown/special characters
+        var safeTopic = System.Text.RegularExpressions.Regex.Replace(topic, @"[#*_\[\]<>]", "");
+        safeTopic = safeTopic.Trim();
+        if (string.IsNullOrWhiteSpace(safeTopic))
+        {
+            safeTopic = "Aura Video Studio";
+        }
+        
+        // Create a simple 2-scene script that's always valid
+        var script = $@"## Introduction
+
+Welcome to {safeTopic}. This is a demonstration video created with Aura Video Studio.
+
+## Overview
+
+Aura Video Studio helps you create professional videos quickly and easily. Thank you for trying our Quick Demo feature.";
+        
+        return script;
+    }
+
+    /// <summary>
+    /// Maps OrchestrationProgress from smart orchestrator to detailed GenerationProgress
+    /// </summary>
+    private static GenerationProgress MapOrchestrationProgressToDetailed(
+        OrchestrationProgress orchestrationProgress,
+        int currentItem,
+        int totalItems,
+        string? correlationId)
+    {
+        // Map stage name to GenerationProgress stage format
+        var stage = orchestrationProgress.CurrentStage.ToLowerInvariant() switch
+        {
+            var s when s.Contains("script") => "Script",
+            var s when s.Contains("audio") || s.Contains("tts") || s.Contains("narration") => "TTS",
+            var s when s.Contains("image") || s.Contains("visual") || s.Contains("asset") => "Images",
+            var s when s.Contains("render") || s.Contains("compose") || s.Contains("composition") => "Rendering",
+            var s when s.Contains("post") => "PostProcess",
+            _ => "Processing"
+        };
+        
+        // Calculate stage-specific percent
+        var stagePercent = orchestrationProgress.ProgressPercentage;
+        
+        return new GenerationProgress
+        {
+            Stage = stage,
+            OverallPercent = StageWeights.CalculateOverallProgress(stage, stagePercent),
+            StagePercent = stagePercent,
+            Message = orchestrationProgress.CurrentStage,
+            CurrentItem = currentItem,
+            TotalItems = totalItems,
+            ElapsedTime = orchestrationProgress.ElapsedTime,
+            CorrelationId = correlationId
         };
     }
 }

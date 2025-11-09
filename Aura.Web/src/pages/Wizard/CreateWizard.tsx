@@ -37,20 +37,26 @@ import {
   ArrowReset24Regular,
   Dismiss24Regular,
   Sparkle24Regular,
+  Save20Regular,
 } from '@fluentui/react-icons';
 import { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { getWizardProject } from '../../api/wizardProjects';
+import { AutoSaveIndicator } from '../../components/AutoSaveIndicator';
 import { GenerationPanel } from '../../components/Generation/GenerationPanel';
 import { useNotifications } from '../../components/Notifications/Toasts';
 import { PreflightPanel } from '../../components/PreflightPanel';
 import { PromptCustomizationPanel } from '../../components/PromptCustomization/PromptCustomizationPanel';
+import SaveProjectDialog from '../../components/SaveProjectDialog';
 import { TooltipContent, TooltipWithLink } from '../../components/Tooltips';
 import { ProviderSelection } from '../../components/Wizard/ProviderSelection';
 import { apiUrl } from '../../config/api';
+import { useWizardAutoSave } from '../../hooks/useWizardAutoSave';
 import { postCancellable, isAbortError } from '../../services/api/cancellableRequests';
 import { loggingService as logger } from '../../services/loggingService';
 import { useJobState } from '../../state/jobState';
 import type { PreflightReport, PerStageProviderSelection } from '../../state/providers';
+import { useWizardProjectStore, deserializeWizardState } from '../../state/wizardProject';
 import type {
   Brief,
   PlanSpec,
@@ -75,6 +81,11 @@ const useStyles = makeStyles({
     display: 'flex',
     flexDirection: 'column',
     gap: tokens.spacingVerticalS,
+  },
+  headerRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   subtitle: {
     color: tokens.colorNeutralForeground3,
@@ -208,10 +219,43 @@ export function CreateWizard() {
   const [promptCustomizationOpen, setPromptCustomizationOpen] = useState(false);
   const handleClosePromptCustomization = () => setPromptCustomizationOpen(false);
 
+  // Save project dialog state
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  const [searchParams] = useSearchParams();
+  const { setCurrentProject, currentProject } = useWizardProjectStore();
+
   // Request cancellation state
   const currentRequestRef = useRef<{ cancel: () => void } | null>(null);
 
   const { showFailureToast, showSuccessToast } = useNotifications();
+
+  // Auto-save functionality
+  const {
+    triggerManualSave,
+    isSaving: isAutoSaving,
+    lastSaveTime,
+    saveError: autoSaveError,
+  } = useWizardAutoSave({
+    enabled: !!currentProject && currentStep > 0,
+    intervalMs: 30000, // 30 seconds
+    projectId: currentProject?.id,
+    projectName: currentProject?.name || 'Untitled Project',
+    currentStep: currentStep - 1, // Convert from 1-indexed to 0-indexed
+    briefJson: JSON.stringify(settings.brief),
+    planSpecJson: JSON.stringify(settings.planSpec),
+    voiceSpecJson: undefined, // Add when voice settings are implemented
+    renderSpecJson: undefined, // Add when render settings are implemented
+    onSaveSuccess: (projectId) => {
+      // Update or create current project
+      if (currentProject) {
+        setCurrentProject({
+          ...currentProject,
+          id: projectId,
+          updatedAt: new Date().toISOString(),
+        });
+      }
+    },
+  });
 
   // Update provider selection
   const updateProviderSelection = (selection: PerStageProviderSelection) => {
@@ -238,6 +282,42 @@ export function CreateWizard() {
       }
     };
   }, []);
+
+  // Load project from URL parameter if present
+  useEffect(() => {
+    const projectId = searchParams.get('projectId');
+    if (projectId) {
+      const loadProject = async () => {
+        try {
+          const project = await getWizardProject(projectId);
+          const state = deserializeWizardState(project);
+
+          // Restore wizard state
+          if (state.brief) {
+            setSettings((prev) => ({ ...prev, brief: state.brief as Brief }));
+          }
+          if (state.plan) {
+            setSettings((prev) => ({ ...prev, planSpec: state.plan as PlanSpec }));
+          }
+
+          setCurrentStep(project.currentStep + 1);
+          setCurrentProject(project);
+
+          showSuccessToast({
+            title: 'Project Loaded',
+            message: `Project "${project.name}" loaded successfully`,
+          });
+        } catch (error) {
+          console.error('Failed to load project:', error);
+          showFailureToast({
+            title: 'Load Failed',
+            message: 'Failed to load project. Please try again.',
+          });
+        }
+      };
+      loadProject();
+    }
+  }, [searchParams, setCurrentProject, showSuccessToast, showFailureToast]);
 
   // Update brief
   const updateBrief = (updates: Partial<Brief>) => {
@@ -599,7 +679,35 @@ export function CreateWizard() {
   return (
     <div className={styles.container}>
       <div className={styles.header}>
-        <Title1>Create Video</Title1>
+        <div className={styles.headerRow}>
+          <Title1>Create Video</Title1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: tokens.spacingHorizontalM }}>
+            {currentProject && (
+              <AutoSaveIndicator
+                status={
+                  isAutoSaving
+                    ? 'saving'
+                    : autoSaveError
+                      ? 'error'
+                      : lastSaveTime
+                        ? 'saved'
+                        : 'idle'
+                }
+                lastSavedAt={lastSaveTime || undefined}
+                error={autoSaveError?.message}
+                onRetry={() => triggerManualSave()}
+                onManualSave={() => triggerManualSave()}
+              />
+            )}
+            <Button
+              icon={<Save20Regular />}
+              onClick={() => setSaveDialogOpen(true)}
+              appearance="subtle"
+            >
+              Save Project
+            </Button>
+          </div>
+        </div>
         <Text className={styles.subtitle}>Step {currentStep} of 3</Text>
         <Text className={styles.keyboardHint}>
           Tip: Press Tab to navigate, Ctrl+Enter to advance
@@ -1684,6 +1792,23 @@ export function CreateWizard() {
           }}
         />
       )}
+
+      {/* Save Project Dialog */}
+      <SaveProjectDialog
+        isOpen={saveDialogOpen}
+        onClose={() => setSaveDialogOpen(false)}
+        currentStep={currentStep - 1}
+        briefData={settings.brief}
+        planData={settings.planSpec}
+        voiceData={undefined}
+        renderData={undefined}
+        onSaveSuccess={() => {
+          showSuccessToast({
+            title: 'Project Saved',
+            message: 'Your project has been saved successfully',
+          });
+        }}
+      />
     </div>
   );
 }

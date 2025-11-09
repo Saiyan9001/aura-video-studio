@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { apiUrl } from '../config/api';
+import { post, get as apiGet, postWithTimeout } from '../services/api/apiClient';
 import {
   SseClient,
   createSseClient,
@@ -27,6 +28,13 @@ export interface Job {
   failureDetails?: JobFailure;
   phase?: string; // Current phase: plan, tts, visuals, compose, render
   progressMessage?: string; // Latest progress message
+  outputPath?: string; // Primary output video path
+  subtitlePath?: string; // Subtitle file path
+  substageDetail?: string; // Detailed substage info (e.g., "Synthesizing scene 3 of 5")
+  currentItem?: number; // Current item being processed
+  totalItems?: number; // Total items to process
+  elapsedTime?: string; // Elapsed time in format hh:mm:ss
+  estimatedTimeRemaining?: string; // Estimated time remaining in format hh:mm:ss
 }
 
 export interface JobFailure {
@@ -59,7 +67,7 @@ interface JobsState {
   // Loading states
   loading: boolean;
   streaming: boolean; // Tracks if SSE is active
-  
+
   // SSE connection state
   connectionState: SseConnectionState | null;
 
@@ -92,31 +100,40 @@ export const useJobsStore = create<JobsState>((set, get) => ({
   createJob: async (brief, planSpec, voiceSpec, renderSpec) => {
     set({ loading: true });
     try {
-      const response = await fetch('/api/jobs', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      logger.info('Creating job', 'jobsStore', 'createJob', {
+        topic: brief.topic,
+        duration: planSpec.targetDuration,
+      });
+
+      // Use apiClient with extended timeout for video generation (5 minutes)
+      const data = await postWithTimeout<{
+        jobId: string;
+        status: string;
+        stage: string;
+        correlationId: string;
+      }>(
+        '/api/jobs',
+        {
           brief,
           planSpec,
           voiceSpec,
           renderSpec,
-        }),
-      });
+        },
+        300000 // 5 minute timeout for job creation
+      );
 
-      if (!response.ok) {
-        throw new Error('Failed to create job');
-      }
-
-      const data = await response.json();
       const jobId = data.jobId;
+
+      logger.info('Job created successfully', 'jobsStore', 'createJob', { jobId });
 
       // Start SSE streaming for updates
       get().startStreaming(jobId);
 
       return jobId;
-    } catch (error) {
-      console.error('Error creating job:', error);
-      throw error;
+    } catch (error: unknown) {
+      const errorObj = error instanceof Error ? error : new Error(String(error));
+      logger.error('Error creating job', errorObj, 'jobsStore', 'createJob');
+      throw errorObj;
     } finally {
       set({ loading: false });
     }
@@ -124,29 +141,19 @@ export const useJobsStore = create<JobsState>((set, get) => ({
 
   getJob: async (jobId: string) => {
     try {
-      const response = await fetch(`/api/jobs/${jobId}`);
-      if (!response.ok) {
-        throw new Error('Failed to get job');
-      }
-
-      const job = await response.json();
+      logger.debug('Fetching job', 'jobsStore', 'getJob', { jobId });
+      const job = await apiGet<Job>(`/api/jobs/${jobId}`);
       set({ activeJob: job });
-    } catch (error) {
-      console.error('Error getting job:', error);
+    } catch (error: unknown) {
+      const errorObj = error instanceof Error ? error : new Error(String(error));
+      logger.error('Error getting job', errorObj, 'jobsStore', 'getJob', { jobId });
     }
   },
 
   getFailureDetails: async (jobId: string) => {
     try {
-      const response = await fetch(`/api/jobs/${jobId}/failure-details`);
-      if (!response.ok) {
-        if (response.status === 404 || response.status === 400) {
-          return null;
-        }
-        throw new Error('Failed to get failure details');
-      }
-
-      const failureDetails: JobFailure = await response.json();
+      logger.debug('Fetching failure details', 'jobsStore', 'getFailureDetails', { jobId });
+      const failureDetails = await apiGet<JobFailure>(`/api/jobs/${jobId}/failure-details`);
 
       // Update active job with failure details if it matches
       const state = get();
@@ -160,8 +167,20 @@ export const useJobsStore = create<JobsState>((set, get) => ({
       }
 
       return failureDetails;
-    } catch (error) {
-      console.error('Error getting failure details:', error);
+    } catch (error: unknown) {
+      const errorObj = error instanceof Error ? error : new Error(String(error));
+
+      // 404 or 400 means no failure details available (job not failed yet)
+      if (error && typeof error === 'object' && 'response' in error) {
+        const axiosError = error as { response?: { status?: number } };
+        if (axiosError.response?.status === 404 || axiosError.response?.status === 400) {
+          return null;
+        }
+      }
+
+      logger.error('Error getting failure details', errorObj, 'jobsStore', 'getFailureDetails', {
+        jobId,
+      });
       return null;
     }
   },
@@ -169,15 +188,12 @@ export const useJobsStore = create<JobsState>((set, get) => ({
   listJobs: async () => {
     set({ loading: true });
     try {
-      const response = await fetch(apiUrl('/api/jobs'));
-      if (!response.ok) {
-        throw new Error('Failed to list jobs');
-      }
-
-      const data = await response.json();
+      logger.debug('Listing all jobs', 'jobsStore', 'listJobs');
+      const data = await apiGet<{ jobs: Job[] }>(apiUrl('/api/jobs'));
       set({ jobs: data.jobs || [] });
-    } catch (error) {
-      console.error('Error listing jobs:', error);
+    } catch (error: unknown) {
+      const errorObj = error instanceof Error ? error : new Error(String(error));
+      logger.error('Error listing jobs', errorObj, 'jobsStore', 'listJobs');
     } finally {
       set({ loading: false });
     }
@@ -189,16 +205,11 @@ export const useJobsStore = create<JobsState>((set, get) => ({
 
   cancelJob: async (jobId: string) => {
     try {
-      const response = await fetch(`/api/jobs/${jobId}/cancel`, {
-        method: 'POST',
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to cancel job');
-      }
+      logger.info('Cancelling job', 'jobsStore', 'cancelJob', { jobId });
+      await post<void>(`/api/jobs/${jobId}/cancel`, undefined);
 
       logger.debug(`Job ${jobId} cancellation requested`, 'JobsStore', 'cancelJob');
-      
+
       // Update active job to reflect cancellation in progress
       const state = get();
       if (state.activeJob && state.activeJob.id === jobId) {
@@ -207,14 +218,10 @@ export const useJobsStore = create<JobsState>((set, get) => ({
           errorMessage: 'Job cancellation in progress...',
         });
       }
-    } catch (error) {
-      logger.error(
-        'Error canceling job',
-        error instanceof Error ? error : new Error(String(error)),
-        'JobsStore',
-        'cancelJob'
-      );
-      throw error;
+    } catch (error: unknown) {
+      const errorObj = error instanceof Error ? error : new Error(String(error));
+      logger.error('Error canceling job', errorObj, 'JobsStore', 'cancelJob');
+      throw errorObj;
     }
   },
 
@@ -235,7 +242,10 @@ export const useJobsStore = create<JobsState>((set, get) => ({
     get().stopStreaming();
 
     logger.debug(`Starting SSE streaming for job: ${jobId}`, 'JobsStore', 'startStreaming');
-    set({ streaming: true, connectionState: { status: 'connecting', reconnectAttempt: 0, lastEventId: null } });
+    set({
+      streaming: true,
+      connectionState: { status: 'connecting', reconnectAttempt: 0, lastEventId: null },
+    });
 
     // Create new SSE client
     sseClient = createSseClient(jobId);
@@ -266,6 +276,11 @@ export const useJobsStore = create<JobsState>((set, get) => ({
         phase: data.phase,
         percent: data.progressPct,
         progressMessage: data.message,
+        substageDetail: data.substageDetail,
+        currentItem: data.currentItem,
+        totalItems: data.totalItems,
+        elapsedTime: data.elapsedTime,
+        estimatedTimeRemaining: data.estimatedTimeRemaining,
       });
     });
 
@@ -293,6 +308,8 @@ export const useJobsStore = create<JobsState>((set, get) => ({
           sizeBytes: a.sizeBytes,
           createdAt: new Date().toISOString(),
         })),
+        outputPath: data.output?.videoPath,
+        subtitlePath: data.output?.subtitlePath,
         finishedAt: new Date().toISOString(),
       });
       get().stopStreaming();

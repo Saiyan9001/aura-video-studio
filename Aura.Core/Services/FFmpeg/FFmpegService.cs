@@ -113,6 +113,7 @@ public class FFmpegService : IFFmpegService
         var startTime = DateTime.UtcNow;
         var outputBuilder = new StringBuilder();
         var errorBuilder = new StringBuilder();
+        TimeSpan? totalDuration = null; // Track total duration for percentage calculation
         
         var processStartInfo = new ProcessStartInfo
         {
@@ -143,10 +144,16 @@ public class FFmpegService : IFFmpegService
                 {
                     errorBuilder.AppendLine(e.Data);
                     
+                    // Try to parse total duration from the input file information
+                    if (totalDuration == null)
+                    {
+                        totalDuration = ParseDuration(e.Data);
+                    }
+                    
                     // Parse progress information from stderr
                     if (progressCallback != null)
                     {
-                        var progress = ParseProgress(e.Data);
+                        var progress = ParseProgress(e.Data, totalDuration);
                         if (progress != null)
                         {
                             progressCallback(progress);
@@ -287,7 +294,32 @@ public class FFmpegService : IFFmpegService
         return _cachedFfmpegPath;
     }
 
-    private FFmpegProgress? ParseProgress(string line)
+    
+    /// <summary>
+    /// Parse duration from FFmpeg output (typically from input file info)
+    /// </summary>
+    internal TimeSpan? ParseDuration(string line)
+    {
+        // FFmpeg duration format: Duration: 00:01:23.45, start: 0.000000, bitrate: 1234 kb/s
+        var durationMatch = System.Text.RegularExpressions.Regex.Match(line, @"Duration:\s*(\d{2}):(\d{2}):(\d{2}\.\d{2})");
+        if (durationMatch.Success)
+        {
+            try
+            {
+                var hours = int.Parse(durationMatch.Groups[1].Value);
+                var minutes = int.Parse(durationMatch.Groups[2].Value);
+                var seconds = double.Parse(durationMatch.Groups[3].Value);
+                return TimeSpan.FromHours(hours) + TimeSpan.FromMinutes(minutes) + TimeSpan.FromSeconds(seconds);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+        return null;
+    }
+    
+    internal FFmpegProgress? ParseProgress(string line, TimeSpan? totalDuration = null)
     {
         // FFmpeg progress format: frame=  123 fps= 45 q=28.0 size=    1024kB time=00:00:05.12 bitrate=1638.4kbits/s speed=1.5x
         
@@ -321,10 +353,15 @@ public class FFmpegService : IFFmpegService
                 var hours = int.Parse(timeMatch.Groups[1].Value);
                 var minutes = int.Parse(timeMatch.Groups[2].Value);
                 var seconds = double.Parse(timeMatch.Groups[3].Value);
-                progress = progress with 
-                { 
-                    ProcessedDuration = TimeSpan.FromHours(hours) + TimeSpan.FromMinutes(minutes) + TimeSpan.FromSeconds(seconds) 
-                };
+                var processedDuration = TimeSpan.FromHours(hours) + TimeSpan.FromMinutes(minutes) + TimeSpan.FromSeconds(seconds);
+                progress = progress with { ProcessedDuration = processedDuration };
+                
+                // Calculate percentage if total duration is known
+                if (totalDuration.HasValue && totalDuration.Value.TotalSeconds > 0)
+                {
+                    var percentComplete = (processedDuration.TotalSeconds / totalDuration.Value.TotalSeconds) * 100.0;
+                    progress = progress with { PercentComplete = Math.Clamp(percentComplete, 0, 100) };
+                }
             }
             
             // Parse speed
@@ -332,6 +369,20 @@ public class FFmpegService : IFFmpegService
             if (speedMatch.Success)
             {
                 progress = progress with { Speed = double.Parse(speedMatch.Groups[1].Value) };
+            }
+            
+            // Parse bitrate
+            var bitrateMatch = System.Text.RegularExpressions.Regex.Match(line, @"bitrate=\s*([\d.]+)");
+            if (bitrateMatch.Success)
+            {
+                progress = progress with { Bitrate = double.Parse(bitrateMatch.Groups[1].Value) };
+            }
+            
+            // Parse size (with optional kB/MB units)
+            var sizeMatch = System.Text.RegularExpressions.Regex.Match(line, @"size=\s*(\d+)(?:kB)?");
+            if (sizeMatch.Success)
+            {
+                progress = progress with { Size = long.Parse(sizeMatch.Groups[1].Value) };
             }
             
             return progress;

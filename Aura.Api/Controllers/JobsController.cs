@@ -133,6 +133,7 @@ public class JobsController : ControllerBase
                 voiceSpec, 
                 renderSpec,
                 correlationId,
+                isQuickDemo: false,
                 ct
             );
 
@@ -344,7 +345,7 @@ public class JobsController : ControllerBase
     }
     
     /// <summary>
-    /// Retry a failed job with specific remediation strategy
+    /// Retry a failed job with exponential backoff
     /// </summary>
     [HttpPost("{jobId}/retry")]
     public async Task<IActionResult> RetryJob(
@@ -372,24 +373,55 @@ public class JobsController : ControllerBase
                 });
             }
             
-            // For now, return guidance on retry strategies
-            // Full retry implementation would require job state management
-            return Ok(new
+            // Verify job has failed
+            if (job.Status != JobStatus.Failed)
             {
-                jobId,
-                currentStatus = job.Status,
-                currentStage = job.Stage,
-                strategy = strategy ?? "manual",
-                message = "Job retry not yet fully implemented. Please create a new job with adjusted settings.",
-                suggestedActions = new[]
+                return BadRequest(new
                 {
-                    "Re-generate with different TTS provider if narration failed",
-                    "Use software encoder (x264) if hardware encoding failed",
-                    "Check FFmpeg installation if render failed",
-                    "Verify input files are valid if validation failed"
-                },
-                correlationId
-            });
+                    type = "https://docs.aura.studio/errors/E400",
+                    title = "Job Not Failed",
+                    status = 400,
+                    detail = $"Job {jobId} has not failed (status: {job.Status})",
+                    currentStatus = job.Status,
+                    correlationId
+                });
+            }
+            
+            // Attempt to retry the job
+            var retried = await _jobRunner.RetryJobAsync(jobId, ct);
+            
+            if (retried)
+            {
+                Log.Information("[{CorrelationId}] Successfully initiated retry for job {JobId}", 
+                    correlationId, jobId);
+                return Accepted(new
+                {
+                    jobId,
+                    message = "Job retry initiated successfully",
+                    strategy = strategy ?? "automatic",
+                    correlationId
+                });
+            }
+            else
+            {
+                Log.Warning("[{CorrelationId}] Failed to retry job {JobId} - max retries reached or backoff active", 
+                    correlationId, jobId);
+                return BadRequest(new
+                {
+                    type = "https://docs.aura.studio/errors/E400",
+                    title = "Retry Not Allowed",
+                    status = 400,
+                    detail = "Job cannot be retried at this time. Maximum retry count may have been reached or backoff period is active.",
+                    currentStatus = job.Status,
+                    suggestedActions = new[]
+                    {
+                        "Wait a few minutes before retrying again",
+                        "Create a new job with adjusted settings",
+                        "Check the failure details for specific remediation steps"
+                    },
+                    correlationId
+                });
+            }
         }
         catch (Exception ex)
         {
@@ -501,13 +533,21 @@ public class JobsController : ControllerBase
                 if (job.Percent != lastPercent)
                 {
                     var latestLog = job.Logs.LastOrDefault() ?? "";
-                    await SendSseEventWithId("step-progress", new { 
+                    var progressData = new { 
                         step = job.Stage, 
                         phase = MapStageToPhase(job.Stage),
                         progressPct = job.Percent,
                         message = latestLog,
-                        correlationId 
-                    }, GenerateEventId(++eventIdCounter));
+                        correlationId,
+                        // Include detailed progress fields if available
+                        substageDetail = job.CurrentProgress?.SubstageDetail,
+                        currentItem = job.CurrentProgress?.CurrentItem,
+                        totalItems = job.CurrentProgress?.TotalItems,
+                        elapsedTime = job.CurrentProgress?.ElapsedTime?.ToString(@"hh\:mm\:ss"),
+                        estimatedTimeRemaining = job.CurrentProgress?.EstimatedTimeRemaining?.ToString(@"hh\:mm\:ss")
+                    };
+                    
+                    await SendSseEventWithId("step-progress", progressData, GenerateEventId(++eventIdCounter));
                     lastPercent = job.Percent;
                     lastProgressMessage = latestLog;
                 }

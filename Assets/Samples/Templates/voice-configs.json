@@ -1,0 +1,153 @@
+{
+  "version": "1.0",
+  "description": "Sample voice configurations for each TTS provider",
+  "configurations": [
+    {
+      "provider": "ElevenLabs",
+      "name": "Premium Male Voice",
+      "description": "Professional male narrator",
+      "voiceId": "21m00Tcm4TlvDq8ikWAM",
+      "settings": {
+        "stability": 0.5,
+        "similarityBoost": 0.75,
+        "style": 0.0,
+        "speakerBoost": true
+      },
+      "sampleText": "Welcome to Aura Video Studio. Create amazing videos with AI.",
+      "tags": ["male", "professional", "narrator"]
+    },
+    {
+      "provider": "ElevenLabs",
+      "name": "Premium Female Voice",
+      "description": "Friendly female narrator",
+      "voiceId": "EXAVITQu4vr4xnSDxMaL",
+      "settings": {
+        "stability": 0.5,
+        "similarityBoost": 0.75,
+        "style": 0.0,
+        "speakerBoost": true
+      },
+      "sampleText": "Welcome to Aura Video Studio. Create amazing videos with AI.",
+      "tags": ["female", "friendly", "narrator"]
+    },
+    {
+      "provider": "PlayHT",
+      "name": "Natural Male",
+      "description": "Natural sounding male voice",
+      "voiceId": "larry",
+      "settings": {
+        "speed": 1.0,
+        "temperature": 0.7,
+        "quality": "premium"
+      },
+      "sampleText": "Welcome to Aura Video Studio. Create amazing videos with AI.",
+      "tags": ["male", "natural", "narrator"]
+    },
+    {
+      "provider": "PlayHT",
+      "name": "Natural Female",
+      "description": "Natural sounding female voice",
+      "voiceId": "sara",
+      "settings": {
+        "speed": 1.0,
+        "temperature": 0.7,
+        "quality": "premium"
+      },
+      "sampleText": "Welcome to Aura Video Studio. Create amazing videos with AI.",
+      "tags": ["female", "natural", "narrator"]
+    },
+    {
+      "provider": "WindowsSAPI",
+      "name": "Windows David",
+      "description": "Built-in Windows male voice",
+      "voiceId": "Microsoft David Desktop",
+      "settings": {
+        "rate": 0,
+        "volume": 100
+      },
+      "sampleText": "Welcome to Aura Video Studio. Create amazing videos with AI.",
+      "tags": ["male", "windows", "free"],
+      "requiresInstallation": false
+    },
+    {
+      "provider": "WindowsSAPI",
+      "name": "Windows Zira",
+      "description": "Built-in Windows female voice",
+      "voiceId": "Microsoft Zira Desktop",
+      "settings": {
+        "rate": 0,
+        "volume": 100
+      },
+      "sampleText": "Welcome to Aura Video Studio. Create amazing videos with AI.",
+      "tags": ["female", "windows", "free"],
+      "requiresInstallation": false
+    },
+    {
+      "provider": "Piper",
+      "name": "Piper US Male",
+      "description": "Neural TTS male voice (offline)",
+      "voiceId": "en_US-lessac-medium",
+      "settings": {
+        "speed": 1.0,
+        "noiseScale": 0.667,
+        "lengthScale": 1.0
+      },
+      "sampleText": "Welcome to Aura Video Studio. Create amazing videos with AI.",
+      "tags": ["male", "neural", "offline", "free"]
+    },
+    {
+      "provider": "Piper",
+      "name": "Piper US Female",
+      "description": "Neural TTS female voice (offline)",
+      "voiceId": "en_US-amy-medium",
+      "settings": {
+        "speed": 1.0,
+        "noiseScale": 0.667,
+        "lengthScale": 1.0
+      },
+      "sampleText": "Welcome to Aura Video Studio. Create amazing videos with AI.",
+      "tags": ["female", "neural", "offline", "free"]
+    },
+    {
+      "provider": "Mimic3",
+      "name": "Mimic3 British Male",
+      "description": "Open source male voice (offline)",
+      "voiceId": "en_UK/apope_low",
+      "settings": {
+        "speed": 1.0,
+        "noiseScale": 0.667
+      },
+      "sampleText": "Welcome to Aura Video Studio. Create amazing videos with AI.",
+      "tags": ["male", "british", "offline", "free"]
+    },
+    {
+      "provider": "Mimic3",
+      "name": "Mimic3 US Female",
+      "description": "Open source female voice (offline)",
+      "voiceId": "en_US/cmu-arctic_low",
+      "settings": {
+        "speed": 1.0,
+        "noiseScale": 0.667
+      },
+      "sampleText": "Welcome to Aura Video Studio. Create amazing videos with AI.",
+      "tags": ["female", "american", "offline", "free"]
+    }
+  ],
+  "presets": {
+    "professional": {
+      "description": "Professional narration settings",
+      "providers": ["ElevenLabs", "PlayHT"],
+      "recommendedFor": ["business", "education", "presentation"]
+    },
+    "casual": {
+      "description": "Casual friendly tone",
+      "providers": ["PlayHT", "Piper"],
+      "recommendedFor": ["social", "tutorial", "entertainment"]
+    },
+    "offline": {
+      "description": "Works without internet connection",
+      "providers": ["WindowsSAPI", "Piper", "Mimic3"],
+      "recommendedFor": ["testing", "privacy", "offline-use"]
+    }
+  }
+}

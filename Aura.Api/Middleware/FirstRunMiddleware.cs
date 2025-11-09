@@ -26,6 +26,7 @@ public class FirstRunMiddleware
         var path = context.Request.Path.Value ?? "";
 
         // Allow setup API endpoints, health/diagnostic endpoints, onboarding page, and essential resources
+        // Critical: These endpoints must be accessible during first-run wizard to prevent UI deadlock
         if (path.StartsWith("/api/setup", StringComparison.OrdinalIgnoreCase) ||
             path.StartsWith("/api/settings/first-run", StringComparison.OrdinalIgnoreCase) ||
             path.StartsWith("/api/preflight", StringComparison.OrdinalIgnoreCase) ||
@@ -39,6 +40,8 @@ public class FirstRunMiddleware
             path.StartsWith("/api/healthz", StringComparison.OrdinalIgnoreCase) ||
             path.StartsWith("/api/capabilities", StringComparison.OrdinalIgnoreCase) ||
             path.StartsWith("/api/jobs/recent-artifacts", StringComparison.OrdinalIgnoreCase) ||
+            path.StartsWith("/api/system", StringComparison.OrdinalIgnoreCase) ||
+            path.StartsWith("/api/ffmpeg", StringComparison.OrdinalIgnoreCase) ||
             path.StartsWith("/onboarding", StringComparison.OrdinalIgnoreCase) ||
             path.StartsWith("/setup", StringComparison.OrdinalIgnoreCase) ||
             path.StartsWith("/assets", StringComparison.OrdinalIgnoreCase) ||
@@ -46,6 +49,13 @@ public class FirstRunMiddleware
             path.EndsWith(".js", StringComparison.OrdinalIgnoreCase) ||
             path.EndsWith(".css", StringComparison.OrdinalIgnoreCase) ||
             path.EndsWith(".map", StringComparison.OrdinalIgnoreCase) ||
+            path.EndsWith(".ico", StringComparison.OrdinalIgnoreCase) ||
+            path.EndsWith(".svg", StringComparison.OrdinalIgnoreCase) ||
+            path.EndsWith(".png", StringComparison.OrdinalIgnoreCase) ||
+            path.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase) ||
+            path.EndsWith(".woff", StringComparison.OrdinalIgnoreCase) ||
+            path.EndsWith(".woff2", StringComparison.OrdinalIgnoreCase) ||
+            path.EndsWith(".ttf", StringComparison.OrdinalIgnoreCase) ||
             path.Equals("/", StringComparison.OrdinalIgnoreCase))
         {
             await _next(context).ConfigureAwait(false);

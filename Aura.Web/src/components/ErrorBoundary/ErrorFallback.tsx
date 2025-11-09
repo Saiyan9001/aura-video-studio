@@ -141,9 +141,9 @@ export function ErrorFallback({ error, errorInfo, onReset, onReport }: ErrorFall
 
   const handleGoBack = () => {
     loggingService.info('User going back after error', 'ErrorFallback', 'goBack');
-    // If we're on the onboarding/downloads page, go to onboarding
-    if (location.pathname.includes('/downloads') || location.pathname.includes('/onboarding')) {
-      navigate('/onboarding', { replace: true });
+    // If we're on the setup/downloads page, go to setup
+    if (location.pathname.includes('/downloads') || location.pathname.includes('/setup')) {
+      navigate('/setup', { replace: true });
     } else {
       // Check if there's history to go back to, otherwise go home
       if (window.history.length > 1) {

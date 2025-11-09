@@ -117,7 +117,6 @@ class MemoryProfiler {
 
     sortedComponents.forEach(([name, stats]) => {
       console.log(
-        // eslint-disable-line no-console
         `${name}: ${stats.activeInstances} active (${stats.mountCount} mounts, ${stats.unmountCount} unmounts, ${stats.cleanupCallbackCount} cleanups)`
       );
     });
@@ -149,7 +148,7 @@ class MemoryProfiler {
 
     if (warnings.length > 0) {
       console.group('⚠️ Warnings'); // eslint-disable-line no-console
-      warnings.forEach((warning) => console.warn(warning)); // eslint-disable-line no-console
+      warnings.forEach((warning) => console.warn(warning));
       console.groupEnd(); // eslint-disable-line no-console
     }
 

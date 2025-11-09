@@ -180,14 +180,14 @@ public class RetryPolicy
         // Otherwise, wrap in a generic ProviderException
         return new ProviderException(
             "RetryPolicy",
-            "SYSTEM",
+            ProviderType.LLM,
             message,
-            $"The operation failed {attempts} times. {lastException.Message}",
-            correlationId,
+            userMessage: $"The operation failed {attempts} times. {lastException.Message}",
+            correlationId: correlationId,
             isTransient: false,
             innerException: lastException)
             .WithContext("retryAttempts", attempts)
-            .WithContext("retriesExhausted", true);
+            .WithContext("retriesExhausted", true) as ProviderException;
     }
 
     /// <summary>

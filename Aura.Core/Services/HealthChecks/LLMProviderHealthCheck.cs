@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using Aura.Core.Models;
+using Aura.Core.Orchestrator;
 using Aura.Core.Providers;
 using Microsoft.Extensions.Logging;
 
@@ -15,16 +16,19 @@ namespace Aura.Core.Services.HealthChecks;
 public class LLMProviderHealthCheck : IHealthCheck
 {
     private readonly ILogger<LLMProviderHealthCheck> _logger;
-    private readonly IEnumerable<ILlmProvider> _llmProviders;
+    private readonly LlmProviderFactory _providerFactory;
+    private readonly ILoggerFactory _loggerFactory;
 
     public string Name => "LLM Providers";
 
     public LLMProviderHealthCheck(
         ILogger<LLMProviderHealthCheck> logger,
-        IEnumerable<ILlmProvider> llmProviders)
+        LlmProviderFactory providerFactory,
+        ILoggerFactory loggerFactory)
     {
         _logger = logger;
-        _llmProviders = llmProviders;
+        _providerFactory = providerFactory;
+        _loggerFactory = loggerFactory;
     }
 
     public async Task<HealthCheckResult> CheckHealthAsync(CancellationToken ct = default)
@@ -40,10 +44,24 @@ public class LLMProviderHealthCheck : IHealthCheck
         var healthyCount = 0;
         var totalCount = 0;
 
-        foreach (var provider in _llmProviders)
+        var providers = _providerFactory.CreateAvailableProviders(_loggerFactory);
+
+        if (providers.Count == 0)
+        {
+            result.Status = HealthStatus.Degraded;
+            result.Message = "No LLM providers are registered";
+            sw.Stop();
+            result.Duration = sw.Elapsed;
+            result.Data["ProviderStatuses"] = providerStatuses;
+            result.Data["HealthyProviders"] = healthyCount;
+            result.Data["TotalProviders"] = totalCount;
+            return result;
+        }
+
+        foreach (var (providerKey, provider) in providers)
         {
             totalCount++;
-            var providerName = provider.GetType().Name;
+            var providerName = providerKey;
 
             try
             {

@@ -147,6 +147,99 @@ namespace Aura.Api.Migrations
                     b.ToTable("AssetStates");
                 });
 
+            modelBuilder.Entity("Aura.Core.Data.ConfigurationEntity", b =>
+                {
+                    b.Property<string>("Key")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("IsSensitive")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ModifiedBy")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Value")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ValueType")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Key");
+
+                    b.HasIndex("Category");
+
+                    b.HasIndex("IsActive");
+
+                    b.HasIndex("IsSensitive");
+
+                    b.HasIndex("UpdatedAt");
+
+                    b.HasIndex("Category", "IsActive");
+
+                    b.HasIndex("Category", "UpdatedAt");
+
+                    b.ToTable("Configurations");
+                });
+
+            modelBuilder.Entity("Aura.Core.Data.ContentBlobEntity", b =>
+                {
+                    b.Property<string>("ContentHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("LastReferencedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("ReferenceCount")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("ContentHash");
+
+                    b.HasIndex("ContentType");
+
+                    b.HasIndex("LastReferencedAt");
+
+                    b.HasIndex("ReferenceCount");
+
+                    b.ToTable("ContentBlobs");
+                });
+
             modelBuilder.Entity("Aura.Core.Data.CustomTemplateEntity", b =>
                 {
                     b.Property<string>("Id")
@@ -327,6 +420,9 @@ namespace Aura.Api.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("TEXT");
 
+                    b.Property<int>("CurrentWizardStep")
+                        .HasColumnType("INTEGER");
+
                     b.Property<DateTime?>("DeletedAt")
                         .HasColumnType("TEXT");
 
@@ -387,6 +483,111 @@ namespace Aura.Api.Migrations
                     b.HasIndex("Status", "UpdatedAt");
 
                     b.ToTable("ProjectStates");
+                });
+
+            modelBuilder.Entity("Aura.Core.Data.ProjectVersionEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("BriefHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("BriefJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CreatedByUserId")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(2000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("IsMarkedImportant")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Name")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PlanHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PlanSpecJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RenderHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RenderSpecJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("StorageSizeBytes")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("TimelineHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TimelineJson")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Trigger")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("VersionNumber")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("VersionType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("VoiceHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("VoiceSpecJson")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CreatedAt");
+
+                    b.HasIndex("IsDeleted");
+
+                    b.HasIndex("IsMarkedImportant");
+
+                    b.HasIndex("ProjectId");
+
+                    b.HasIndex("VersionType");
+
+                    b.HasIndex("IsDeleted", "DeletedAt");
+
+                    b.HasIndex("ProjectId", "CreatedAt");
+
+                    b.HasIndex("ProjectId", "VersionNumber")
+                        .IsUnique();
+
+                    b.ToTable("ProjectVersions");
                 });
 
             modelBuilder.Entity("Aura.Core.Data.RenderCheckpointEntity", b =>
@@ -473,6 +674,51 @@ namespace Aura.Api.Migrations
                     b.HasIndex("ProjectId", "SceneIndex");
 
                     b.ToTable("SceneStates");
+                });
+
+            modelBuilder.Entity("Aura.Core.Data.SystemConfigurationEntity", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("id");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("FFmpegPath")
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT")
+                        .HasColumnName("ffmpeg_path");
+
+                    b.Property<bool>("IsSetupComplete")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("is_setup_complete");
+
+                    b.Property<string>("OutputDirectory")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT")
+                        .HasColumnName("output_directory");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("system_configuration");
+
+                    b.HasData(
+                        new
+                        {
+                            Id = 1,
+                            CreatedAt = new DateTime(2025, 11, 9, 17, 4, 31, 236, DateTimeKind.Utc).AddTicks(5323),
+                            IsSetupComplete = false,
+                            OutputDirectory = "/home/runner/AuraVideoStudio/Output",
+                            UpdatedAt = new DateTime(2025, 11, 9, 17, 4, 31, 236, DateTimeKind.Utc).AddTicks(5324)
+                        });
                 });
 
             modelBuilder.Entity("Aura.Core.Data.TemplateEntity", b =>
@@ -633,6 +879,17 @@ namespace Aura.Api.Migrations
                 {
                     b.HasOne("Aura.Core.Data.ProjectStateEntity", "Project")
                         .WithMany("Assets")
+                        .HasForeignKey("ProjectId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Project");
+                });
+
+            modelBuilder.Entity("Aura.Core.Data.ProjectVersionEntity", b =>
+                {
+                    b.HasOne("Aura.Core.Data.ProjectStateEntity", "Project")
+                        .WithMany()
                         .HasForeignKey("ProjectId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();

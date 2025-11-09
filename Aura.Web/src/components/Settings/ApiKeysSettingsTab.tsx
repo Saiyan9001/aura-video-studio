@@ -15,10 +15,12 @@ import {
   CheckmarkCircle24Filled,
   DismissCircle24Filled,
   Info24Regular,
+  Eye24Regular,
 } from '@fluentui/react-icons';
 import { useState } from 'react';
 import type { ApiKeysSettings } from '../../types/settings';
 import { TooltipContent, TooltipWithLink } from '../Tooltips';
+import { ProviderStatusDashboard } from './ProviderStatusDashboard';
 
 const useStyles = makeStyles({
   section: {
@@ -56,6 +58,10 @@ const useStyles = makeStyles({
     gap: tokens.spacingHorizontalXS,
     marginTop: tokens.spacingVerticalXS,
   },
+  dashboardToggle: {
+    marginTop: tokens.spacingVerticalL,
+    marginBottom: tokens.spacingVerticalM,
+  },
 });
 
 interface ApiKeysSettingsTabProps {
@@ -84,6 +90,7 @@ export function ApiKeysSettingsTab({
   const styles = useStyles();
   const [testResults, setTestResults] = useState<Record<string, TestResult | null>>({});
   const [testing, setTesting] = useState<Record<string, boolean>>({});
+  const [showDashboard, setShowDashboard] = useState(false);
 
   const updateSetting = <K extends keyof ApiKeysSettings>(key: K, value: ApiKeysSettings[K]) => {
     onChange({ ...settings, [key]: value });
@@ -150,6 +157,25 @@ export function ApiKeysSettingsTab({
           storage. Use &ldquo;Test&rdquo; buttons to verify connectivity.
         </Text>
       </div>
+
+      <div className={styles.dashboardToggle}>
+        <Button
+          icon={<Eye24Regular />}
+          appearance="subtle"
+          onClick={() => setShowDashboard(!showDashboard)}
+        >
+          {showDashboard ? 'Hide' : 'Show'} Provider Status Dashboard
+        </Button>
+      </div>
+
+      {showDashboard && (
+        <>
+          <ProviderStatusDashboard />
+          <Divider
+            style={{ marginTop: tokens.spacingVerticalL, marginBottom: tokens.spacingVerticalL }}
+          />
+        </>
+      )}
 
       <div className={styles.form}>
         {/* LLM Providers Section */}

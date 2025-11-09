@@ -3,10 +3,13 @@
  * Provides type-safe access to environment variables
  */
 
+import { resolveApiBaseUrl } from './apiBaseUrl';
 import { loggingService as logger } from '../services/loggingService';
 
+const apiBaseResolution = resolveApiBaseUrl();
+
 export const env = {
-  apiBaseUrl: import.meta.env.VITE_API_BASE_URL || 'http://localhost:5005',
+  apiBaseUrl: apiBaseResolution.value,
   appVersion: import.meta.env.VITE_APP_VERSION || '1.0.0',
   appName: import.meta.env.VITE_APP_NAME || 'Aura Video Studio',
   environment: import.meta.env.VITE_ENV || 'development',
@@ -22,6 +25,7 @@ export const env = {
 if (env.isDevelopment && env.enableDebug) {
   logger.debug('Environment configuration loaded', 'config', 'env', {
     apiBaseUrl: env.apiBaseUrl,
+    apiBaseUrlSource: apiBaseResolution.source,
     environment: env.environment,
     appVersion: env.appVersion,
   });

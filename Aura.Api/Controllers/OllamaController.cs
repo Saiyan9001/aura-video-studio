@@ -2,6 +2,7 @@ using System.Text.Json;
 using Aura.Api.Models.ApiModels.V1;
 using Aura.Core.Configuration;
 using Aura.Core.Services;
+using Aura.Core.Services.Providers;
 using Microsoft.AspNetCore.Mvc;
 using Serilog;
 
@@ -17,15 +18,18 @@ public class OllamaController : ControllerBase
     private readonly OllamaService _ollamaService;
     private readonly ProviderSettings _settings;
     private readonly HttpClient _httpClient;
+    private readonly OllamaDetectionService? _detectionService;
 
     public OllamaController(
         OllamaService ollamaService,
         ProviderSettings settings,
-        IHttpClientFactory httpClientFactory)
+        IHttpClientFactory httpClientFactory,
+        OllamaDetectionService? detectionService = null)
     {
         _ollamaService = ollamaService;
         _settings = settings;
         _httpClient = httpClientFactory.CreateClient();
+        _detectionService = detectionService;
     }
 
     /// <summary>
@@ -299,6 +303,114 @@ public class OllamaController : ControllerBase
                 statusCode: 500,
                 instance: HttpContext.TraceIdentifier
             );
+        }
+    }
+
+    /// <summary>
+    /// Get detailed information about a specific model
+    /// </summary>
+    [HttpGet("models/{modelName}/info")]
+    public async Task<IActionResult> GetModelInfo(string modelName, CancellationToken ct)
+    {
+        if (_detectionService == null)
+        {
+            return Problem("Ollama detection service not available", statusCode: 503);
+        }
+
+        try
+        {
+            var info = await _detectionService.GetModelInfoAsync(modelName, ct);
+            
+            if (info == null)
+            {
+                return NotFound(new { message = $"Model '{modelName}' not found or info unavailable" });
+            }
+
+            return Ok(new OllamaModelInfoDto
+            {
+                Name = info.Name,
+                Parameters = info.Parameters,
+                Modelfile = info.Modelfile,
+                ContextWindow = info.ContextWindow
+            });
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Error getting model info for {ModelName}, CorrelationId={CorrelationId}", 
+                modelName, HttpContext.TraceIdentifier);
+            return Problem($"Error getting model info for {modelName}", statusCode: 500);
+        }
+    }
+
+    /// <summary>
+    /// Check if a specific model is available locally
+    /// </summary>
+    [HttpGet("models/{modelName}/available")]
+    public async Task<IActionResult> CheckModelAvailability(string modelName, CancellationToken ct)
+    {
+        if (_detectionService == null)
+        {
+            return Problem("Ollama detection service not available", statusCode: 503);
+        }
+
+        try
+        {
+            var isAvailable = await _detectionService.IsModelAvailableAsync(modelName, ct);
+            
+            return Ok(new { modelName, isAvailable });
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Error checking model availability for {ModelName}, CorrelationId={CorrelationId}", 
+                modelName, HttpContext.TraceIdentifier);
+            return Problem($"Error checking model availability for {modelName}", statusCode: 500);
+        }
+    }
+
+    /// <summary>
+    /// Pull a model from the Ollama library (initiate async download)
+    /// </summary>
+    [HttpPost("models/{modelName}/pull")]
+    public async Task<IActionResult> PullModel(string modelName, CancellationToken ct)
+    {
+        if (_detectionService == null)
+        {
+            return Problem("Ollama detection service not available", statusCode: 503);
+        }
+
+        try
+        {
+            Log.Information("Initiating pull for Ollama model: {ModelName}, CorrelationId={CorrelationId}", 
+                modelName, HttpContext.TraceIdentifier);
+            
+            var pullProgress = new Progress<OllamaPullProgress>(p =>
+            {
+                Log.Debug("Pull progress for {ModelName}: {Status} - {Percent:F1}%",
+                    modelName, p.Status, p.PercentComplete);
+            });
+
+            var success = await _detectionService.PullModelAsync(modelName, pullProgress, ct);
+
+            if (success)
+            {
+                return Ok(new { 
+                    message = $"Model '{modelName}' pulled successfully",
+                    modelName,
+                    success = true
+                });
+            }
+
+            return BadRequest(new { 
+                message = $"Failed to pull model '{modelName}'",
+                modelName,
+                success = false
+            });
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Error pulling Ollama model: {ModelName}, CorrelationId={CorrelationId}", 
+                modelName, HttpContext.TraceIdentifier);
+            return Problem($"Error pulling model {modelName}", statusCode: 500);
         }
     }
 

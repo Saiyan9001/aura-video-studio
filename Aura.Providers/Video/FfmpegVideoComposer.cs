@@ -8,7 +8,10 @@ using System.Threading.Tasks;
 using Aura.Core.Dependencies;
 using Aura.Core.Errors;
 using Aura.Core.Models;
+using Aura.Core.Models.Export;
 using Aura.Core.Providers;
+using Aura.Core.Services.FFmpeg;
+using Aura.Core.Services.Render;
 using Microsoft.Extensions.Logging;
 
 namespace Aura.Providers.Video;
@@ -21,6 +24,7 @@ public class FfmpegVideoComposer : IVideoComposer
     private readonly string _workingDirectory;
     private string _outputDirectory;
     private readonly string _logsDirectory;
+    private readonly HardwareEncoder _hardwareEncoder;
 
     public FfmpegVideoComposer(ILogger<FfmpegVideoComposer> logger, IFfmpegLocator ffmpegLocator, string? configuredFfmpegPath = null, string? outputDirectory = null)
     {
@@ -52,6 +56,11 @@ public class FfmpegVideoComposer : IVideoComposer
         {
             Directory.CreateDirectory(_logsDirectory);
         }
+        
+        // Initialize placeholder - actual hardware encoder will be created at render time with proper path
+        _hardwareEncoder = new HardwareEncoder(
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<HardwareEncoder>.Instance, 
+            "ffmpeg");
     }
 
     public async Task<string> RenderAsync(Timeline timeline, RenderSpec spec, IProgress<RenderProgress> progress, CancellationToken ct)
@@ -90,8 +99,8 @@ public class FfmpegVideoComposer : IVideoComposer
             _outputDirectory,
             $"AuraVideoStudio_{DateTime.Now:yyyyMMddHHmmss}.{spec.Container}");
         
-        // Build the FFmpeg command
-        string ffmpegCommand = BuildFfmpegCommand(timeline, spec, outputFilePath);
+        // Build the FFmpeg command with hardware acceleration support
+        string ffmpegCommand = await BuildFfmpegCommandAsync(timeline, spec, outputFilePath, ffmpegPath, ct);
         
         _logger.LogInformation("FFmpeg command (JobId={JobId}): {FFmpegPath} {Command}", 
             jobId, ffmpegPath, ffmpegCommand);
@@ -381,64 +390,173 @@ public class FfmpegVideoComposer : IVideoComposer
         
         return outputFilePath;
     }
-    
-    private string BuildFfmpegCommand(Timeline timeline, RenderSpec spec, string outputPath)
+    /// <summary>
+    /// Build FFmpeg command using FFmpegCommandBuilder with hardware acceleration support
+    /// </summary>
+    private async Task<string> BuildFfmpegCommandAsync(Timeline timeline, RenderSpec spec, string outputPath, string ffmpegPath, CancellationToken ct)
     {
-        var args = new List<string>();
+        _logger.LogInformation("Building FFmpeg command for render spec: {Codec} @ {Width}x{Height}, {Fps}fps, {VideoBitrate}kbps", 
+            spec.Codec, spec.Res.Width, spec.Res.Height, spec.Fps, spec.VideoBitrateK);
         
-        // Input file(s)
-        args.Add("-i"); // Narration
-        args.Add($"\"{timeline.NarrationPath}\"");
-        
-        if (!string.IsNullOrEmpty(timeline.MusicPath))
+        // Validate input files
+        if (string.IsNullOrEmpty(timeline.NarrationPath) || !File.Exists(timeline.NarrationPath))
         {
-            args.Add("-i"); // Music
-            args.Add($"\"{timeline.MusicPath}\"");
+            throw new ArgumentException($"Narration file not found: {timeline.NarrationPath}", nameof(timeline));
         }
         
-        // Scene assets would be added here in a more complete implementation
-        // For simplicity, we'll assume a basic slideshow with narration and music
+        if (!string.IsNullOrEmpty(timeline.MusicPath) && !File.Exists(timeline.MusicPath))
+        {
+            _logger.LogWarning("Music file not found, will skip music: {Path}", timeline.MusicPath);
+        }
         
-        // Output file format settings
-        args.Add("-c:v");
-        args.Add("libx264"); // Default to h264 for compatibility
+        // Determine aspect ratio from resolution
+        var aspectRatio = spec.Res.Width == spec.Res.Height ? AspectRatio.OneByOne :
+                         spec.Res.Width > spec.Res.Height ? AspectRatio.SixteenByNine :
+                         AspectRatio.NineBySixteen;
         
-        args.Add("-preset");
-        args.Add("medium"); // Balance quality and speed
+        // Create export preset from render spec
+        var exportPreset = new ExportPreset(
+            Name: "Custom",
+            Description: $"Custom render at {spec.Res.Width}x{spec.Res.Height}",
+            Platform: Platform.Generic,
+            Container: spec.Container,
+            VideoCodec: spec.Codec.ToLowerInvariant() switch
+            {
+                "h264" => "libx264",
+                "h265" or "hevc" => "libx265",
+                "vp9" => "libvpx-vp9",
+                "av1" => "libaom-av1",
+                _ => "libx264"
+            },
+            AudioCodec: "aac",
+            Resolution: spec.Res,
+            FrameRate: spec.Fps,
+            VideoBitrate: spec.VideoBitrateK,
+            AudioBitrate: spec.AudioBitrateK,
+            PixelFormat: "yuv420p",
+            ColorSpace: "bt709",
+            AspectRatio: aspectRatio,
+            Quality: spec.QualityLevel >= 90 ? QualityLevel.Maximum :
+                     spec.QualityLevel >= 75 ? QualityLevel.High :
+                     spec.QualityLevel >= 50 ? QualityLevel.Good :
+                     QualityLevel.Draft
+        );
         
-        args.Add("-crf");
-        args.Add("23"); // Good quality
+        // Detect hardware capabilities and select best encoder
+        // Create hardware encoder with ffmpeg path (use NullLogger since we log from FfmpegVideoComposer)
+        var hardwareEncoderWithPath = new HardwareEncoder(
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<HardwareEncoder>.Instance, 
+            ffmpegPath);
+        EncoderConfig encoderConfig;
         
-        // Resolution
-        args.Add("-s");
-        args.Add($"{spec.Res.Width}x{spec.Res.Height}");
+        try
+        {
+            encoderConfig = await hardwareEncoderWithPath.SelectBestEncoderAsync(exportPreset, preferHardware: true);
+            _logger.LogInformation("Selected encoder: {Encoder} (Hardware: {IsHardware})", 
+                encoderConfig.EncoderName, encoderConfig.IsHardwareAccelerated);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to detect hardware encoder, falling back to software");
+            encoderConfig = new EncoderConfig(
+                exportPreset.VideoCodec,
+                "Software encoder (fallback)",
+                false,
+                new Dictionary<string, string>());
+        }
         
-        // Audio settings
-        args.Add("-c:a");
-        args.Add("aac");
+        // Build command using FFmpegCommandBuilder
+        var builder = new FFmpegCommandBuilder()
+            .SetOverwrite(true);
         
-        args.Add("-b:a");
-        args.Add($"{spec.AudioBitrateK}k");
+        // Add hardware acceleration if available
+        if (encoderConfig.IsHardwareAccelerated)
+        {
+            // Set hwaccel based on encoder type
+            if (encoderConfig.EncoderName.Contains("nvenc", StringComparison.OrdinalIgnoreCase))
+            {
+                builder.SetHardwareAcceleration("cuda");
+            }
+            else if (encoderConfig.EncoderName.Contains("qsv", StringComparison.OrdinalIgnoreCase))
+            {
+                builder.SetHardwareAcceleration("qsv");
+            }
+            else if (encoderConfig.EncoderName.Contains("amf", StringComparison.OrdinalIgnoreCase))
+            {
+                builder.SetHardwareAcceleration("d3d11va");
+            }
+        }
         
-        // Video bitrate
-        args.Add("-b:v");
-        args.Add($"{spec.VideoBitrateK}k");
+        // Add input files
+        builder.AddInput(timeline.NarrationPath);
         
-        // Framerate
-        args.Add("-r");
-        args.Add("30");
+        bool hasMusicInput = !string.IsNullOrEmpty(timeline.MusicPath) && File.Exists(timeline.MusicPath);
+        if (hasMusicInput)
+        {
+            builder.AddInput(timeline.MusicPath);
+        }
         
-        // Pixel format
-        args.Add("-pix_fmt");
-        args.Add("yuv420p");
+        // Set video codec (use hardware encoder if available)
+        builder.SetVideoCodec(encoderConfig.EncoderName);
         
-        // Overwrite output file if it exists
-        args.Add("-y");
+        // Apply encoder-specific parameters
+        foreach (var param in encoderConfig.Parameters)
+        {
+            // These would need to be added as options to the command
+            _logger.LogDebug("Encoder parameter: {Key}={Value}", param.Key, param.Value);
+        }
         
-        // Output file path
-        args.Add($"\"{outputPath}\"");
+        // Set encoding preset based on quality
+        var preset = exportPreset.Quality switch
+        {
+            QualityLevel.Draft => "ultrafast",
+            QualityLevel.Good => "fast",
+            QualityLevel.High => "medium",
+            QualityLevel.Maximum => "slow",
+            _ => "medium"
+        };
+        builder.SetPreset(preset);
         
-        return string.Join(" ", args);
+        // Set CRF for quality (lower is better, 18-28 is good range)
+        var crf = spec.QualityLevel >= 90 ? 18 :
+                 spec.QualityLevel >= 75 ? 23 :
+                 spec.QualityLevel >= 50 ? 28 :
+                 33;
+        builder.SetCRF(crf);
+        
+        // Set resolution and frame rate
+        builder.SetResolution(spec.Res.Width, spec.Res.Height);
+        builder.SetFrameRate(spec.Fps);
+        
+        // Set pixel format
+        builder.SetPixelFormat(exportPreset.PixelFormat);
+        
+        // Set audio codec and bitrate
+        builder.SetAudioCodec(exportPreset.AudioCodec);
+        builder.SetAudioBitrate(spec.AudioBitrateK);
+        
+        // Set video bitrate
+        builder.SetVideoBitrate(spec.VideoBitrateK);
+        
+        // Set audio settings for better quality
+        builder.SetAudioSampleRate(48000); // Standard sample rate
+        builder.SetAudioChannels(2); // Stereo
+        
+        // Add metadata
+        builder.AddMetadata("title", "Generated by Aura Video Studio");
+        builder.AddMetadata("encoder", "Aura Video Studio");
+        builder.AddMetadata("creation_time", DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"));
+        
+        // Set output file
+        builder.SetOutput(outputPath);
+        
+        // Build the command
+        var command = builder.Build();
+        
+        _logger.LogInformation("FFmpeg command built successfully: {Length} characters", command.Length);
+        _logger.LogDebug("Full command: ffmpeg {Command}", command);
+        
+        return command;
     }
     
     /// <summary>

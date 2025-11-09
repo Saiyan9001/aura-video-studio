@@ -18,11 +18,13 @@ import {
   Folder24Regular,
   Search24Regular,
   DocumentBulletList24Regular,
+  Open24Regular,
 } from '@fluentui/react-icons';
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { apiUrl } from '../config/api';
 import { retryJob } from '../features/render/api/jobs';
+import { openLogsFolder } from '../utils/apiErrorHandler';
+import { openFile, openFolder } from '../utils/fileSystemUtils';
 
 const useStyles = makeStyles({
   container: {
@@ -112,6 +114,28 @@ const useStyles = makeStyles({
     textAlign: 'center',
     color: tokens.colorNeutralForeground2,
   },
+  outputSection: {
+    marginTop: tokens.spacingVerticalM,
+    paddingTop: tokens.spacingVerticalM,
+    borderTop: `1px solid ${tokens.colorNeutralStroke2}`,
+  },
+  outputPath: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: tokens.spacingVerticalS,
+    marginTop: tokens.spacingVerticalS,
+  },
+  pathText: {
+    fontFamily: 'monospace',
+    fontSize: tokens.fontSizeBase200,
+    color: tokens.colorNeutralForeground2,
+    wordBreak: 'break-all',
+  },
+  outputActions: {
+    display: 'flex',
+    gap: tokens.spacingHorizontalS,
+    marginTop: tokens.spacingVerticalS,
+  },
 });
 
 interface JobArtifact {
@@ -130,6 +154,8 @@ interface Job {
   correlationId?: string;
   errorMessage?: string;
   artifacts?: JobArtifact[];
+  outputPath?: string;
+  subtitlePath?: string;
 }
 
 export function RecentJobsPage() {
@@ -227,22 +253,17 @@ export function RecentJobsPage() {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
-  const openFolder = async (path: string) => {
-    try {
-      // Call API to open the folder containing the file
-      const response = await fetch(`${apiUrl}/api/v1/files/open-folder`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path }),
-      });
+  const handleOpenFile = async (path: string) => {
+    const success = await openFile(path);
+    if (!success) {
+      alert('Failed to open file. Please ensure the backend API is running.');
+    }
+  };
 
-      if (!response.ok) {
-        console.error('Failed to open folder:', await response.text());
-        alert('Failed to open folder. This feature requires backend API support.');
-      }
-    } catch (error) {
-      console.error('Error opening folder:', error);
-      alert('Could not open folder. Ensure the backend API is running.');
+  const handleOpenFolder = async (path: string) => {
+    const success = await openFolder(path);
+    if (!success) {
+      alert('Failed to open folder. Please ensure the backend API is running.');
     }
   };
 
@@ -323,7 +344,9 @@ export function RecentJobsPage() {
                   )}
                 </div>
                 <div className={styles.jobActions}>
-                  {(job.status === 'Done' || job.status === 'Failed' || job.status === 'Canceled') && (
+                  {(job.status === 'Done' ||
+                    job.status === 'Failed' ||
+                    job.status === 'Canceled') && (
                     <Button
                       appearance="subtle"
                       icon={<DocumentBulletList24Regular />}
@@ -352,6 +375,52 @@ export function RecentJobsPage() {
                 </div>
               </div>
 
+              {job.status === 'Done' && job.outputPath && (
+                <div className={styles.outputSection}>
+                  <Text weight="semibold">Final Output</Text>
+                  <div className={styles.outputPath}>
+                    <Text className={styles.pathText}>{job.outputPath}</Text>
+                    <div className={styles.outputActions}>
+                      <Button
+                        appearance="primary"
+                        icon={<Open24Regular />}
+                        onClick={() => handleOpenFile(job.outputPath!)}
+                      >
+                        Open File
+                      </Button>
+                      <Button
+                        appearance="subtle"
+                        icon={<Folder24Regular />}
+                        onClick={() => handleOpenFolder(job.outputPath!)}
+                      >
+                        Open Folder
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {job.status === 'Done' && !job.outputPath && (
+                <div className={styles.outputSection}>
+                  <Text weight="semibold">Final Output</Text>
+                  <div className={styles.outputPath}>
+                    <Text
+                      size={200}
+                      style={{ color: tokens.colorNeutralForeground3, fontStyle: 'italic' }}
+                    >
+                      Output path not available
+                    </Text>
+                    <Button
+                      appearance="subtle"
+                      icon={<DocumentBulletList24Regular />}
+                      onClick={() => openLogsFolder()}
+                    >
+                      View Logs
+                    </Button>
+                  </div>
+                </div>
+              )}
+
               {job.artifacts && job.artifacts.length > 0 && (
                 <div className={styles.artifactsSection}>
                   <Text weight="semibold">Artifacts ({job.artifacts.length})</Text>
@@ -373,7 +442,7 @@ export function RecentJobsPage() {
                         <Button
                           appearance="subtle"
                           icon={<Folder24Regular />}
-                          onClick={() => openFolder(artifact.path)}
+                          onClick={() => handleOpenFolder(artifact.path)}
                         >
                           Open Folder
                         </Button>

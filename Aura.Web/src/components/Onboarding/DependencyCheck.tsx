@@ -260,7 +260,8 @@ export function DependencyCheck({
     (d) => d.required && d.status === 'installed'
   ).length;
 
-  const allRequiredInstalled = requiredInstalled === requiredCount;
+  // All required installed only if there are required deps and all are installed
+  const allRequiredInstalled = requiredCount > 0 && requiredInstalled === requiredCount;
 
   return (
     <div className={styles.container}>
@@ -276,12 +277,12 @@ export function DependencyCheck({
       <Card className={styles.summaryCard}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <Title3>
+            <Title3 style={{ marginBottom: tokens.spacingVerticalXS }}>
               {allRequiredInstalled
                 ? '✓ All Required Dependencies Installed'
                 : 'Dependencies Status'}
             </Title3>
-            <Text size={300} style={{ marginTop: tokens.spacingVerticalXS }}>
+            <Text size={300}>
               {installedCount} of {dependencies.length} components installed
               {requiredCount > 0 && ` (${requiredInstalled}/${requiredCount} required)`}
               {skippedCount > 0 && `, ${skippedCount} skipped`}

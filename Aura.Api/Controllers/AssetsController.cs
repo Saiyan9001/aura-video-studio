@@ -24,6 +24,7 @@ public class AssetsController : ControllerBase
     private readonly StockImageService _stockImageService;
     private readonly AIImageGenerator _aiImageGenerator;
     private readonly AssetUsageTracker _usageTracker;
+    private readonly SampleAssetsService? _sampleAssets;
 
     public AssetsController(
         ILogger<AssetsController> logger,
@@ -31,7 +32,8 @@ public class AssetsController : ControllerBase
         AssetTagger assetTagger,
         StockImageService stockImageService,
         AIImageGenerator aiImageGenerator,
-        AssetUsageTracker usageTracker)
+        AssetUsageTracker usageTracker,
+        SampleAssetsService? sampleAssets = null)
     {
         _logger = logger;
         _assetLibrary = assetLibrary;
@@ -39,6 +41,7 @@ public class AssetsController : ControllerBase
         _stockImageService = stockImageService;
         _aiImageGenerator = aiImageGenerator;
         _usageTracker = usageTracker;
+        _sampleAssets = sampleAssets;
     }
 
     /// <summary>
@@ -347,6 +350,117 @@ public class AssetsController : ControllerBase
         {
             _logger.LogError(ex, "Failed to add asset to collection");
             return StatusCode(500, new { error = "Failed to add asset to collection" });
+        }
+    }
+
+    /// <summary>
+    /// Get all brief templates
+    /// </summary>
+    [HttpGet("samples/templates/briefs")]
+    public async Task<IActionResult> GetBriefTemplates()
+    {
+        try
+        {
+            if (_sampleAssets == null)
+                return NotFound(new { error = "Sample assets service not available" });
+
+            var templates = await _sampleAssets.GetBriefTemplatesAsync();
+            return Ok(templates);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get brief templates");
+            return StatusCode(500, new { error = "Failed to retrieve brief templates" });
+        }
+    }
+
+    /// <summary>
+    /// Get brief template by ID
+    /// </summary>
+    [HttpGet("samples/templates/briefs/{templateId}")]
+    public async Task<IActionResult> GetBriefTemplate(string templateId)
+    {
+        try
+        {
+            if (_sampleAssets == null)
+                return NotFound(new { error = "Sample assets service not available" });
+
+            var template = await _sampleAssets.GetBriefTemplateAsync(templateId);
+            if (template == null)
+                return NotFound(new { error = "Template not found" });
+
+            return Ok(template);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get brief template {TemplateId}", templateId);
+            return StatusCode(500, new { error = "Failed to retrieve brief template" });
+        }
+    }
+
+    /// <summary>
+    /// Get all voice configurations
+    /// </summary>
+    [HttpGet("samples/voice-configs")]
+    public async Task<IActionResult> GetVoiceConfigurations([FromQuery] string? provider = null)
+    {
+        try
+        {
+            if (_sampleAssets == null)
+                return NotFound(new { error = "Sample assets service not available" });
+
+            var configs = string.IsNullOrWhiteSpace(provider)
+                ? await _sampleAssets.GetVoiceConfigurationsAsync()
+                : await _sampleAssets.GetVoiceConfigurationsByProviderAsync(provider);
+
+            return Ok(configs);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get voice configurations");
+            return StatusCode(500, new { error = "Failed to retrieve voice configurations" });
+        }
+    }
+
+    /// <summary>
+    /// Get all sample images
+    /// </summary>
+    [HttpGet("samples/images")]
+    public async Task<IActionResult> GetSampleImages()
+    {
+        try
+        {
+            if (_sampleAssets == null)
+                return NotFound(new { error = "Sample assets service not available" });
+
+            var images = await _sampleAssets.GetSampleImagesAsync();
+            return Ok(images);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get sample images");
+            return StatusCode(500, new { error = "Failed to retrieve sample images" });
+        }
+    }
+
+    /// <summary>
+    /// Get all sample audio
+    /// </summary>
+    [HttpGet("samples/audio")]
+    public async Task<IActionResult> GetSampleAudio()
+    {
+        try
+        {
+            if (_sampleAssets == null)
+                return NotFound(new { error = "Sample assets service not available" });
+
+            var audio = await _sampleAssets.GetSampleAudioAsync();
+            return Ok(audio);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to get sample audio");
+            return StatusCode(500, new { error = "Failed to retrieve sample audio" });
         }
     }
 

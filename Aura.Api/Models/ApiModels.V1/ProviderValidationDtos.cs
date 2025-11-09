@@ -10,6 +10,33 @@ public record ValidateOpenAIKeyRequest(
     string? ProjectId = null);
 
 /// <summary>
+/// Request model for testing OpenAI script generation
+/// </summary>
+public record TestOpenAIGenerationRequest(
+    string ApiKey,
+    string Model = "gpt-4o-mini",
+    string? BaseUrl = null,
+    string? OrganizationId = null,
+    string? ProjectId = null);
+
+/// <summary>
+/// Request model for validating ElevenLabs API key
+/// </summary>
+public record ValidateElevenLabsKeyRequest(string ApiKey);
+
+/// <summary>
+/// Request model for validating PlayHT API key
+/// </summary>
+public record ValidatePlayHTKeyRequest(string ApiKey);
+
+/// <summary>
+/// Generic provider API key validation request
+/// </summary>
+public record ValidateProviderKeyRequest(
+    string Provider,
+    string ApiKey);
+
+/// <summary>
 /// Response model for provider validation with detailed status
 /// </summary>
 public record ProviderValidationResponse(
@@ -30,6 +57,17 @@ public record ValidationDetails(
     int? HttpStatusCode = null,
     string? ErrorType = null,
     long? ResponseTimeMs = null);
+
+/// <summary>
+/// Provider status information
+/// </summary>
+public record ProviderStatusDto(
+    string Name,
+    bool IsConfigured,
+    bool IsAvailable,
+    string Status,
+    string? LastValidated = null,
+    string? ErrorMessage = null);
 
 /// <summary>
 /// Validation status enum

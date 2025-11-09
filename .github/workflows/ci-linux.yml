@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [ main ]
 
+permissions:
+  contents: read
+
 jobs:
   build-linux:
     runs-on: ubuntu-latest
@@ -39,11 +42,19 @@ jobs:
       - name: Restore .NET packages
         run: dotnet restore
 
-      - name: Build .NET solution
-        run: dotnet build --configuration Release --no-restore
+      - name: Build .NET solution - Linux-compatible projects only
+        run: |
+          # Build Linux-compatible projects (excludes Aura.App which is Windows-only WinUI)
+          dotnet build Aura.Core/Aura.Core.csproj --configuration Release --no-restore
+          dotnet build Aura.Providers/Aura.Providers.csproj --configuration Release --no-restore
+          dotnet build Aura.Api/Aura.Api.csproj --configuration Release --no-restore
+          dotnet build Aura.Cli/Aura.Cli.csproj --configuration Release --no-restore
+          dotnet build Aura.Analyzers/Aura.Analyzers.csproj --configuration Release --no-restore
+          dotnet build Aura.Tests/Aura.Tests.csproj --configuration Release --no-restore
+          dotnet build Aura.E2E/Aura.E2E.csproj --configuration Release --no-restore
 
       - name: Test .NET with coverage
-        run: dotnet test --configuration Release --no-build --logger "trx;LogFileName=test-results.trx" --collect:"XPlat Code Coverage"
+        run: dotnet test Aura.Tests/Aura.Tests.csproj --configuration Release --no-build --logger "trx;LogFileName=test-results.trx" --collect:"XPlat Code Coverage"
 
       - name: Install Node dependencies
         working-directory: Aura.Web

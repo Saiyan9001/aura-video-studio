@@ -50,35 +50,38 @@ public class TtsProviderFactory
             {
                 foreach (var provider in allProviders)
                 {
-                    if (provider != null)
+                    // Skip null providers (these are registered but couldn't be created due to missing config)
+                    if (provider == null)
                     {
-                        var providerType = provider.GetType().Name;
-                        
-                        // SECURITY: Exclude MockTtsProvider from production - it's test-only
-                        if (providerType == "MockTtsProvider")
-                        {
-                            _logger.LogWarning("[{CorrelationId}] Skipping MockTtsProvider - test-only provider not allowed in production", correlationId);
-                            continue;
-                        }
-                        
-                        var providerName = providerType.Replace("TtsProvider", "");
-                        
-                        // Map type names to friendly names
-                        providerName = providerName switch
-                        {
-                            "Windows" => "Windows",
-                            "Piper" => "Piper",
-                            "Mimic3" => "Mimic3",
-                            "ElevenLabs" => "ElevenLabs",
-                            "PlayHT" => "PlayHT",
-                            "Azure" => "Azure",
-                            "Null" => "Null",
-                            _ => providerName
-                        };
-                        
-                        providers[providerName] = provider;
-                        _logger.LogInformation("[{CorrelationId}] Registered {Provider} TTS provider", correlationId, providerName);
+                        continue;
                     }
+                    
+                    var providerType = provider.GetType().Name;
+                    
+                    // SECURITY: Exclude MockTtsProvider from production - it's test-only
+                    if (providerType == "MockTtsProvider")
+                    {
+                        _logger.LogWarning("[{CorrelationId}] Skipping MockTtsProvider - test-only provider not allowed in production", correlationId);
+                        continue;
+                    }
+                    
+                    var providerName = providerType.Replace("TtsProvider", "");
+                    
+                    // Map type names to friendly names
+                    providerName = providerName switch
+                    {
+                        "Windows" => "Windows",
+                        "Piper" => "Piper",
+                        "Mimic3" => "Mimic3",
+                        "ElevenLabs" => "ElevenLabs",
+                        "PlayHT" => "PlayHT",
+                        "Azure" => "Azure",
+                        "Null" => "Null",
+                        _ => providerName
+                    };
+                    
+                    providers[providerName] = provider;
+                    _logger.LogInformation("[{CorrelationId}] Registered {Provider} TTS provider", correlationId, providerName);
                 }
             }
         }

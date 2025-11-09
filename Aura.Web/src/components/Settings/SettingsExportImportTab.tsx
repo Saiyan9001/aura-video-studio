@@ -26,10 +26,14 @@ import {
   Warning24Regular,
   CheckmarkCircle24Regular,
   Info24Regular,
+  ArrowCounterclockwise24Regular,
+  ArrowReset24Regular,
+  Shield24Regular,
 } from '@fluentui/react-icons';
 import { useState, useEffect, useCallback } from 'react';
 import type { FC } from 'react';
 import { apiUrl } from '../../config/api';
+import { configurationRecoveryService } from '../../services/configurationRecoveryService';
 
 const useStyles = makeStyles({
   container: {
@@ -519,6 +523,112 @@ export const SettingsExportImportTab: FC<SettingsExportImportTabProps> = ({ onSe
   const styles = useStyles();
   const [exportModalOpen, setExportModalOpen] = useState(false);
   const [importModalOpen, setImportModalOpen] = useState(false);
+  const [backups, setBackups] = useState<any[]>([]);
+  const [recoveryInProgress, setRecoveryInProgress] = useState(false);
+
+  useEffect(() => {
+    loadBackups();
+  }, []);
+
+  const loadBackups = () => {
+    const availableBackups = configurationRecoveryService.listBackups();
+    setBackups(availableBackups);
+  };
+
+  const handleValidateConfig = () => {
+    const result = configurationRecoveryService.validateConfiguration();
+
+    if (result.valid) {
+      alert(
+        `Configuration is valid!\n\nWarnings: ${result.warnings.length}\n${result.warnings.join('\n')}`
+      );
+    } else {
+      alert(
+        `Configuration validation failed!\n\nErrors:\n${result.errors.join('\n')}\n\nWarnings:\n${result.warnings.join('\n')}`
+      );
+    }
+  };
+
+  const handleCreateBackup = async () => {
+    const success = await configurationRecoveryService.backupConfiguration();
+
+    if (success) {
+      alert('Configuration backup created successfully!');
+      loadBackups();
+    } else {
+      alert('Failed to create configuration backup.');
+    }
+  };
+
+  const handleRestoreFromBackup = async (index: number) => {
+    if (
+      !confirm(
+        `Restore configuration from backup ${index + 1}? This will replace your current configuration.`
+      )
+    ) {
+      return;
+    }
+
+    setRecoveryInProgress(true);
+    try {
+      const success = await configurationRecoveryService.restoreFromBackup(index);
+
+      if (success) {
+        alert('Configuration restored successfully! Page will reload.');
+        window.location.reload();
+      } else {
+        alert('Failed to restore configuration from backup.');
+      }
+    } finally {
+      setRecoveryInProgress(false);
+    }
+  };
+
+  const handleResetToDefaults = async () => {
+    if (
+      !confirm(
+        'Reset all configuration to defaults? This will create a backup of your current configuration first.'
+      )
+    ) {
+      return;
+    }
+
+    setRecoveryInProgress(true);
+    try {
+      const success = await configurationRecoveryService.resetToDefaults();
+
+      if (success) {
+        alert('Configuration reset to defaults! Page will reload.');
+        window.location.reload();
+      } else {
+        alert('Failed to reset configuration to defaults.');
+      }
+    } finally {
+      setRecoveryInProgress(false);
+    }
+  };
+
+  const handleAutoRecover = async () => {
+    if (
+      !confirm('Attempt automatic configuration recovery? This will validate and fix any issues.')
+    ) {
+      return;
+    }
+
+    setRecoveryInProgress(true);
+    try {
+      const success = await configurationRecoveryService.autoRecover();
+
+      if (success) {
+        alert('Configuration recovered successfully! Page will reload.');
+        window.location.reload();
+      } else {
+        alert('Auto-recovery failed. Please try resetting to defaults.');
+      }
+    } finally {
+      setRecoveryInProgress(false);
+    }
+  };
 
   return (
     <div className={styles.container}>
@@ -556,6 +666,111 @@ export const SettingsExportImportTab: FC<SettingsExportImportTabProps> = ({ onSe
                 <Text size={200}>
                   Exports are secretless by default. API keys are NOT included unless you explicitly
                   choose to include them with proper warnings and per-key selection.
+                </Text>
+              </div>
+            </div>
+          </MessageBarBody>
+        </MessageBar>
+      </Card>
+
+      <Card className={styles.section}>
+        <Title2>Configuration Recovery</Title2>
+        <Text style={{ marginBottom: tokens.spacingVerticalL, display: 'block' }}>
+          Validate, backup, and recover your configuration if issues occur.
+        </Text>
+
+        <div className={styles.buttonGroup}>
+          <Button appearance="secondary" icon={<Shield24Regular />} onClick={handleValidateConfig}>
+            Validate Configuration
+          </Button>
+          <Button
+            appearance="secondary"
+            icon={<ArrowDownload24Regular />}
+            onClick={handleCreateBackup}
+          >
+            Create Backup
+          </Button>
+          <Button
+            appearance="secondary"
+            icon={<ArrowCounterclockwise24Regular />}
+            onClick={handleAutoRecover}
+            disabled={recoveryInProgress}
+          >
+            Auto-Recover
+          </Button>
+          <Button
+            appearance="secondary"
+            icon={<ArrowReset24Regular />}
+            onClick={handleResetToDefaults}
+            disabled={recoveryInProgress}
+          >
+            Reset to Defaults
+          </Button>
+        </div>
+
+        {backups.length > 0 && (
+          <>
+            <Title3 style={{ marginTop: tokens.spacingVerticalL }}>
+              Available Backups ({backups.length})
+            </Title3>
+            <div
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: tokens.spacingVerticalS,
+                marginTop: tokens.spacingVerticalM,
+              }}
+            >
+              {backups.map((backup, index) => (
+                <Card key={index} style={{ padding: tokens.spacingVerticalM }}>
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                    }}
+                  >
+                    <div>
+                      <Text weight="semibold">Backup {index + 1}</Text>
+                      <Text
+                        size={200}
+                        style={{ display: 'block', color: tokens.colorNeutralForeground3 }}
+                      >
+                        {new Date(backup.timestamp).toLocaleString()}
+                      </Text>
+                      <Text
+                        size={200}
+                        style={{ display: 'block', color: tokens.colorNeutralForeground3 }}
+                      >
+                        Version: {backup.version}
+                      </Text>
+                    </div>
+                    <Button
+                      appearance="secondary"
+                      size="small"
+                      onClick={() => handleRestoreFromBackup(index)}
+                      disabled={recoveryInProgress}
+                    >
+                      Restore
+                    </Button>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          </>
+        )}
+
+        <MessageBar intent="warning" style={{ marginTop: tokens.spacingVerticalL }}>
+          <MessageBarBody>
+            <div
+              style={{ display: 'flex', gap: tokens.spacingHorizontalS, alignItems: 'flex-start' }}
+            >
+              <Warning24Regular style={{ flexShrink: 0 }} />
+              <div>
+                <MessageBarTitle>Configuration Recovery</MessageBarTitle>
+                <Text size={200}>
+                  Use these tools to diagnose and fix configuration issues. Auto-recovery will
+                  attempt to restore from a backup or reset to defaults if needed.
                 </Text>
               </div>
             </div>

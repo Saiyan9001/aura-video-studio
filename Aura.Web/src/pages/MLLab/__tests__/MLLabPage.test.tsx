@@ -1,5 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { useMLLabStore } from '../../../state/mlLab';
 import { MLLabPage } from '../MLLabPage';
@@ -33,7 +34,11 @@ describe('MLLabPage', () => {
   });
 
   it('should render ML Lab page with title', () => {
-    render(<MLLabPage />);
+    render(
+      <MemoryRouter>
+        <MLLabPage />
+      </MemoryRouter>
+    );
 
     expect(screen.getByText('ML Lab (Advanced)')).toBeInTheDocument();
     expect(
@@ -42,7 +47,11 @@ describe('MLLabPage', () => {
   });
 
   it('should check system capabilities on mount', async () => {
-    render(<MLLabPage />);
+    render(
+      <MemoryRouter>
+        <MLLabPage />
+      </MemoryRouter>
+    );
 
     await waitFor(() => {
       expect(mockCheckSystemCapabilities).toHaveBeenCalledTimes(1);
@@ -50,14 +59,22 @@ describe('MLLabPage', () => {
   });
 
   it('should render both tabs', () => {
-    render(<MLLabPage />);
+    render(
+      <MemoryRouter>
+        <MLLabPage />
+      </MemoryRouter>
+    );
 
     expect(screen.getByRole('tab', { name: 'Annotate Frames' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Train Model' })).toBeInTheDocument();
   });
 
   it('should display annotation tab by default', () => {
-    render(<MLLabPage />);
+    render(
+      <MemoryRouter>
+        <MLLabPage />
+      </MemoryRouter>
+    );
 
     expect(screen.getByTestId('annotation-tab')).toBeInTheDocument();
     expect(screen.queryByTestId('training-tab')).not.toBeInTheDocument();
@@ -67,7 +84,11 @@ describe('MLLabPage', () => {
     const user = userEvent.setup();
 
     // First render with annotation tab
-    const { rerender } = render(<MLLabPage />);
+    const { rerender } = render(
+      <MemoryRouter>
+        <MLLabPage />
+      </MemoryRouter>
+    );
 
     // Click training tab - use getByRole to target the button specifically
     const trainingTab = screen.getByRole('tab', { name: 'Train Model' });
@@ -82,7 +103,11 @@ describe('MLLabPage', () => {
     });
 
     // Re-render with new state
-    rerender(<MLLabPage />);
+    rerender(
+      <MemoryRouter>
+        <MLLabPage />
+      </MemoryRouter>
+    );
 
     // Verify setCurrentTab was called
     await waitFor(() => {
@@ -105,7 +130,11 @@ describe('MLLabPage', () => {
       },
     });
 
-    render(<MLLabPage />);
+    render(
+      <MemoryRouter>
+        <MLLabPage />
+      </MemoryRouter>
+    );
 
     expect(screen.getByText('System Warnings')).toBeInTheDocument();
     expect(
@@ -132,7 +161,11 @@ describe('MLLabPage', () => {
       },
     });
 
-    render(<MLLabPage />);
+    render(
+      <MemoryRouter>
+        <MLLabPage />
+      </MemoryRouter>
+    );
 
     expect(screen.getByText('System Warnings')).toBeInTheDocument();
     expect(screen.getByText(/Less than 8GB RAM/)).toBeInTheDocument();
@@ -156,13 +189,21 @@ describe('MLLabPage', () => {
       },
     });
 
-    render(<MLLabPage />);
+    render(
+      <MemoryRouter>
+        <MLLabPage />
+      </MemoryRouter>
+    );
 
     expect(screen.queryByText('System Warnings')).not.toBeInTheDocument();
   });
 
   it('should display info banner about training requirements', () => {
-    render(<MLLabPage />);
+    render(
+      <MemoryRouter>
+        <MLLabPage />
+      </MemoryRouter>
+    );
 
     expect(screen.getByText('Important: Training Requirements')).toBeInTheDocument();
     expect(

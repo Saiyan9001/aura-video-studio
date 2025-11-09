@@ -27,6 +27,12 @@ public record DependencyStatus(
     string? OllamaVersion,
     bool NvidiaDriversInstalled,
     string? NvidiaDriverVersion,
+    bool NodeJsInstalled,
+    string? NodeJsVersion,
+    bool DotNetInstalled,
+    string? DotNetVersion,
+    bool PythonInstalled,
+    string? PythonVersion,
     double DiskSpaceGB,
     bool InternetConnected,
     bool FFmpegInstallationRequired,
@@ -69,6 +75,15 @@ public class DependencyDetector
         // Detect NVIDIA drivers
         var (nvidiaInstalled, nvidiaVersion) = DetectNvidiaDrivers();
 
+        // Detect Node.js
+        var (nodeInstalled, nodeVersion) = await DetectNodeJsAsync(ct).ConfigureAwait(false);
+
+        // Detect .NET runtime
+        var (dotnetInstalled, dotnetVersion) = await DetectDotNetAsync(ct).ConfigureAwait(false);
+
+        // Detect Python
+        var (pythonInstalled, pythonVersion) = await DetectPythonAsync(ct).ConfigureAwait(false);
+
         // Check disk space
         var diskSpace = GetAvailableDiskSpaceGB();
 
@@ -84,14 +99,20 @@ public class DependencyDetector
             OllamaVersion: ollamaVersion,
             NvidiaDriversInstalled: nvidiaInstalled,
             NvidiaDriverVersion: nvidiaVersion,
+            NodeJsInstalled: nodeInstalled,
+            NodeJsVersion: nodeVersion,
+            DotNetInstalled: dotnetInstalled,
+            DotNetVersion: dotnetVersion,
+            PythonInstalled: pythonInstalled,
+            PythonVersion: pythonVersion,
             DiskSpaceGB: diskSpace,
             InternetConnected: internetConnected,
             FFmpegInstallationRequired: !ffmpegInstalled,
             PiperTtsInstallationRequired: !piperInstalled,
             OllamaInstallationRequired: !ollamaInstalled,
-            FFmpegRecommendedTier: RecommendedTier.Free, // FFmpeg required for all tiers
-            PiperTtsRecommendedTier: RecommendedTier.Balanced, // Piper for Balanced/Local tier
-            OllamaRecommendedTier: RecommendedTier.Balanced // Ollama for Balanced/Local tier
+            FFmpegRecommendedTier: RecommendedTier.Free,
+            PiperTtsRecommendedTier: RecommendedTier.Balanced,
+            OllamaRecommendedTier: RecommendedTier.Balanced
         );
     }
 
@@ -338,5 +359,140 @@ public class DependencyDetector
             _logger.LogDebug(ex, "Internet connectivity check failed");
             return false;
         }
+    }
+
+    private async Task<(bool installed, string? version)> DetectNodeJsAsync(CancellationToken ct)
+    {
+        try
+        {
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = "node",
+                Arguments = "--version",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+
+            using var process = Process.Start(startInfo);
+            if (process == null)
+            {
+                return (false, null);
+            }
+
+            var output = await process.StandardOutput.ReadToEndAsync(ct).ConfigureAwait(false);
+            await process.WaitForExitAsync(ct).ConfigureAwait(false);
+
+            if (process.ExitCode == 0 && !string.IsNullOrWhiteSpace(output))
+            {
+                var version = output.Trim().TrimStart('v');
+                _logger.LogInformation("Node.js detected: {Version}", version);
+                return (true, version);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Node.js not found");
+        }
+
+        return (false, null);
+    }
+
+    private async Task<(bool installed, string? version)> DetectDotNetAsync(CancellationToken ct)
+    {
+        try
+        {
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = "dotnet",
+                Arguments = "--version",
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
+
+            using var process = Process.Start(startInfo);
+            if (process == null)
+            {
+                return (false, null);
+            }
+
+            var output = await process.StandardOutput.ReadToEndAsync(ct).ConfigureAwait(false);
+            await process.WaitForExitAsync(ct).ConfigureAwait(false);
+
+            if (process.ExitCode == 0 && !string.IsNullOrWhiteSpace(output))
+            {
+                var version = output.Trim();
+                _logger.LogInformation(".NET runtime detected: {Version}", version);
+                return (true, version);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, ".NET runtime not found");
+        }
+
+        return (false, null);
+    }
+
+    private async Task<(bool installed, string? version)> DetectPythonAsync(CancellationToken ct)
+    {
+        try
+        {
+            var pythonCommands = new[] { "python3", "python" };
+            
+            foreach (var cmd in pythonCommands)
+            {
+                try
+                {
+                    var startInfo = new ProcessStartInfo
+                    {
+                        FileName = cmd,
+                        Arguments = "--version",
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                        UseShellExecute = false,
+                        CreateNoWindow = true
+                    };
+
+                    using var process = Process.Start(startInfo);
+                    if (process == null)
+                    {
+                        continue;
+                    }
+
+                    var output = await process.StandardOutput.ReadToEndAsync(ct).ConfigureAwait(false);
+                    var errorOutput = await process.StandardError.ReadToEndAsync(ct).ConfigureAwait(false);
+                    await process.WaitForExitAsync(ct).ConfigureAwait(false);
+
+                    if (process.ExitCode == 0)
+                    {
+                        var versionOutput = !string.IsNullOrWhiteSpace(output) ? output : errorOutput;
+                        if (!string.IsNullOrWhiteSpace(versionOutput))
+                        {
+                            var versionMatch = System.Text.RegularExpressions.Regex.Match(versionOutput, @"Python\s+(\d+\.\d+\.\d+)");
+                            if (versionMatch.Success)
+                            {
+                                var version = versionMatch.Groups[1].Value;
+                                _logger.LogInformation("Python detected: {Version}", version);
+                                return (true, version);
+                            }
+                        }
+                    }
+                }
+                catch
+                {
+                    continue;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Python not found");
+        }
+
+        return (false, null);
     }
 }

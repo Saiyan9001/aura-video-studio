@@ -277,9 +277,9 @@ public class ProviderMixer
     /// Selects the best available TTS provider based on profile and availability
     /// 
     /// Fallback chain:
-    /// - Pro tier: ElevenLabs → PlayHT → Mimic3 → Piper → Windows (guaranteed)
-    /// - ProIfAvailable: ElevenLabs → PlayHT → Mimic3 → Piper → Windows (guaranteed)
-    /// - Free tier: Mimic3 → Piper → Windows (guaranteed)
+    /// - Pro tier: ElevenLabs → OpenAI → PlayHT → Azure → EdgeTTS → Mimic3 → Piper → Windows (guaranteed)
+    /// - ProIfAvailable: ElevenLabs → OpenAI → PlayHT → Azure → EdgeTTS → Mimic3 → Piper → Windows (guaranteed)
+    /// - Free tier: EdgeTTS → Mimic3 → Piper → Windows (guaranteed)
     /// - Empty providers: Windows (guaranteed - never throws)
     /// </summary>
     public ProviderSelection SelectTtsProvider(
@@ -319,7 +319,18 @@ public class ProviderMixer
                 {
                     Stage = stage,
                     SelectedProvider = "ElevenLabs",
-                    Reason = "Pro provider available and preferred",
+                    Reason = "Pro provider available and preferred (premium quality)",
+                    IsFallback = false
+                };
+            }
+
+            if (availableProviders.ContainsKey("OpenAI"))
+            {
+                return new ProviderSelection
+                {
+                    Stage = stage,
+                    SelectedProvider = "OpenAI",
+                    Reason = "Pro provider available (high quality, streaming support)",
                     IsFallback = false
                 };
             }
@@ -330,15 +341,26 @@ public class ProviderMixer
                 {
                     Stage = stage,
                     SelectedProvider = "PlayHT",
-                    Reason = "Pro provider available and preferred",
+                    Reason = "Pro provider available (voice cloning support)",
                     IsFallback = false
                 };
             }
 
-            // If ProIfAvailable and no Pro providers, fall back to local/free
+            if (availableProviders.ContainsKey("Azure"))
+            {
+                return new ProviderSelection
+                {
+                    Stage = stage,
+                    SelectedProvider = "Azure",
+                    Reason = "Pro provider available (enterprise grade)",
+                    IsFallback = false
+                };
+            }
+
+            // If ProIfAvailable and no Pro providers, fall back to free/local
             if (preferredTier == "ProIfAvailable")
             {
-                _logger.LogInformation("No Pro TTS providers available, falling back to local/free TTS");
+                _logger.LogInformation("No Pro TTS providers available, falling back to free/local TTS");
             }
             else
             {
@@ -346,43 +368,57 @@ public class ProviderMixer
             }
         }
 
-        // Try local TTS providers (offline, high quality)
-        if (availableProviders.ContainsKey("Mimic3"))
+        // Try free online TTS providers
+        if (availableProviders.ContainsKey("EdgeTTS"))
         {
             bool isFallback = preferredTier == "Pro";
             return new ProviderSelection
             {
                 Stage = stage,
-                SelectedProvider = "Mimic3",
-                Reason = "Local Mimic3 TTS available (offline)",
+                SelectedProvider = "EdgeTTS",
+                Reason = "Free EdgeTTS available (no API key required, good quality)",
                 IsFallback = isFallback,
                 FallbackFrom = isFallback ? "Pro TTS" : null
             };
         }
 
+        // Try local TTS providers (offline, high quality)
+        if (availableProviders.ContainsKey("Mimic3"))
+        {
+            bool isFallback = preferredTier == "Pro" || preferredTier == "ProIfAvailable";
+            return new ProviderSelection
+            {
+                Stage = stage,
+                SelectedProvider = "Mimic3",
+                Reason = "Local Mimic3 TTS available (offline, neural TTS)",
+                IsFallback = isFallback,
+                FallbackFrom = isFallback ? "Pro/Free TTS" : null
+            };
+        }
+
         if (availableProviders.ContainsKey("Piper"))
         {
-            bool isFallback = preferredTier == "Pro";
+            bool isFallback = preferredTier == "Pro" || preferredTier == "ProIfAvailable";
             return new ProviderSelection
             {
                 Stage = stage,
                 SelectedProvider = "Piper",
                 Reason = "Local Piper TTS available (offline, fast)",
                 IsFallback = isFallback,
-                FallbackFrom = isFallback ? "Pro TTS" : null
+                FallbackFrom = isFallback ? "Pro/Free TTS" : null
             };
         }
 
-        // Fall back to Windows TTS (always available)
+        // Fall back to Windows TTS (always available on Windows)
         if (availableProviders.ContainsKey("Windows"))
         {
             return new ProviderSelection
             {
                 Stage = stage,
                 SelectedProvider = "Windows",
-                Reason = "Windows TTS - free and always available",
+                Reason = "Windows TTS - free and always available (system fallback)",
                 IsFallback = preferredTier == "Pro" || preferredTier == "ProIfAvailable",
-                FallbackFrom = (preferredTier == "Pro" || preferredTier == "ProIfAvailable") ? "Pro/Local TTS" : null
+                FallbackFrom = (preferredTier == "Pro" || preferredTier == "ProIfAvailable") ? "Pro/Free/Local TTS" : null
             };
         }
 
@@ -402,11 +438,11 @@ public class ProviderMixer
     /// Selects the best available image/visual provider based on profile and availability
     /// 
     /// Fallback chain:
-    /// - Pro tier: Stability → Runway → StableDiffusion (if NVIDIA 6GB+) → Stock → Slideshow (guaranteed)
-    /// - ProIfAvailable: Stability → Runway → StableDiffusion (if NVIDIA 6GB+) → Stock → Slideshow (guaranteed)
-    /// - StockOrLocal: StableDiffusion (if NVIDIA 6GB+) → Stock → Slideshow (guaranteed)
-    /// - Free tier: Stock → Slideshow (guaranteed)
-    /// - Empty providers: Slideshow (guaranteed - never throws)
+    /// - Pro tier: DALL-E 3 → StabilityAI → Midjourney → LocalSD (if NVIDIA 6GB+) → Unsplash → Placeholder (guaranteed)
+    /// - ProIfAvailable: DALL-E 3 → StabilityAI → Midjourney → LocalSD (if NVIDIA 6GB+) → Unsplash → Placeholder (guaranteed)
+    /// - StockOrLocal: LocalSD (if NVIDIA 6GB+) → Unsplash → Placeholder (guaranteed)
+    /// - Free tier: LocalSD (if NVIDIA 6GB+) → Unsplash → Placeholder (guaranteed)
+    /// - Empty providers: Placeholder (guaranteed - never throws)
     /// </summary>
     public ProviderSelection SelectVisualProvider(
         Dictionary<string, object> availableProviders,
@@ -442,6 +478,39 @@ public class ProviderMixer
         // Try Pro providers first if requested
         if (preferredTier == "Pro" || preferredTier == "ProIfAvailable" || preferredTier == "CloudPro")
         {
+            if (availableProviders.ContainsKey("DALL-E3"))
+            {
+                return new ProviderSelection
+                {
+                    Stage = stage,
+                    SelectedProvider = "DALL-E3",
+                    Reason = "Pro provider available (OpenAI DALL-E 3, highest quality)",
+                    IsFallback = false
+                };
+            }
+
+            if (availableProviders.ContainsKey("StabilityAI"))
+            {
+                return new ProviderSelection
+                {
+                    Stage = stage,
+                    SelectedProvider = "StabilityAI",
+                    Reason = "Pro provider available (Stability AI, excellent quality)",
+                    IsFallback = false
+                };
+            }
+
+            if (availableProviders.ContainsKey("Midjourney"))
+            {
+                return new ProviderSelection
+                {
+                    Stage = stage,
+                    SelectedProvider = "Midjourney",
+                    Reason = "Pro provider available (Midjourney, artistic quality)",
+                    IsFallback = false
+                };
+            }
+
             if (availableProviders.ContainsKey("Stability"))
             {
                 return new ProviderSelection
@@ -466,13 +535,25 @@ public class ProviderMixer
 
             if (preferredTier == "ProIfAvailable")
             {
-                _logger.LogInformation("No Pro visual providers available, falling back to local/stock");
+                _logger.LogInformation("No Pro visual providers available, falling back to local/free");
             }
         }
 
         // Try local SD if available (NVIDIA-only with sufficient VRAM)
-        if (preferredTier == "StockOrLocal" || preferredTier == "ProIfAvailable")
+        if (preferredTier == "StockOrLocal" || preferredTier == "ProIfAvailable" || preferredTier == "Free")
         {
+            if (isNvidiaGpu && vramGB >= 6 && availableProviders.ContainsKey("LocalSD"))
+            {
+                return new ProviderSelection
+                {
+                    Stage = stage,
+                    SelectedProvider = "LocalSD",
+                    Reason = $"Local Stable Diffusion available (NVIDIA GPU with {vramGB}GB VRAM, free)",
+                    IsFallback = preferredTier == "Pro",
+                    FallbackFrom = preferredTier == "Pro" ? "Pro Visual" : null
+                };
+            }
+
             if (isNvidiaGpu && vramGB >= 6 && availableProviders.ContainsKey("StableDiffusion"))
             {
                 return new ProviderSelection
@@ -486,7 +567,19 @@ public class ProviderMixer
             }
         }
 
-        // Fall back to stock images
+        // Fall back to stock images (Unsplash)
+        if (availableProviders.ContainsKey("Unsplash"))
+        {
+            return new ProviderSelection
+            {
+                Stage = stage,
+                SelectedProvider = "Unsplash",
+                Reason = "Free Unsplash stock photos",
+                IsFallback = preferredTier == "Pro" || preferredTier == "StockOrLocal",
+                FallbackFrom = preferredTier != "Free" ? "Pro/Local Visual" : null
+            };
+        }
+
         if (availableProviders.ContainsKey("Stock"))
         {
             return new ProviderSelection
@@ -499,7 +592,20 @@ public class ProviderMixer
             };
         }
 
-        // Ultimate fallback: slideshow/solid colors
+        // Ultimate fallback: Placeholder (guaranteed to always succeed)
+        if (availableProviders.ContainsKey("Placeholder"))
+        {
+            return new ProviderSelection
+            {
+                Stage = stage,
+                SelectedProvider = "Placeholder",
+                Reason = "Placeholder provider - guaranteed fallback (always available)",
+                IsFallback = true,
+                FallbackFrom = "All visual providers"
+            };
+        }
+
+        // Slideshow fallback for backward compatibility
         return new ProviderSelection
         {
             Stage = stage,
@@ -587,19 +693,25 @@ public class ProviderMixer
             "Gemini" or "gemini" => "Gemini",
             
             // TTS providers
-            "Windows" or "windows" or "Windows SAPI" or "WindowsSAPI" or "SAPI" => "Windows",
+            "Windows" or "windows" or "Windows SAPI" or "WindowsSAPI" or "SAPI" or "System" or "system" => "Windows",
             "ElevenLabs" or "elevenlabs" or "Eleven" or "eleven" => "ElevenLabs",
+            "OpenAI" or "openai" or "OpenAI-TTS" or "OpenAiTts" => "OpenAI",
             "PlayHT" or "playht" or "Play.ht" or "PlayHt" => "PlayHT",
+            "EdgeTTS" or "edgetts" or "Edge" or "edge" or "EdgeTts" => "EdgeTTS",
             "Piper" or "piper" => "Piper",
             "Mimic3" or "mimic3" or "Mimic" or "mimic" => "Mimic3",
             
             // Visual providers
             "Stock" or "stock" => "Stock",
-            "LocalSD" or "localsd" or "StableDiffusion" or "stablediffusion" or "SD" => "StableDiffusion",
+            "LocalSD" or "localsd" or "StableDiffusion" or "stablediffusion" or "SD" => "LocalSD",
             "CloudPro" or "cloudpro" or "Cloud" or "cloud" => "CloudPro",
-            "Stability" or "stability" or "StabilityAI" or "StabilityAi" => "Stability",
+            "Stability" or "stability" or "StabilityAI" or "StabilityAi" => "StabilityAI",
             "Runway" or "runway" or "RunwayML" or "RunwayMl" => "Runway",
             "Slideshow" or "slideshow" => "Slideshow",
+            "DALL-E3" or "DALL-E 3" or "dalle3" or "dalle-3" or "DallE3" => "DALL-E3",
+            "Midjourney" or "midjourney" or "MJ" or "mj" => "Midjourney",
+            "Unsplash" or "unsplash" => "Unsplash",
+            "Placeholder" or "placeholder" => "Placeholder",
             
             // Default: return as-is
             _ => name

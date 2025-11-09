@@ -76,7 +76,7 @@ export function FFmpegStatusCard() {
   const fetchStatus = async () => {
     setLoading(true);
     try {
-      const response = await fetch('/api/ffmpeg/status');
+      const response = await fetch('/api/system/ffmpeg/status');
       if (response.ok) {
         const data = await response.json();
         setStatus(data);
@@ -113,16 +113,19 @@ export function FFmpegStatusCard() {
       });
 
       if (response.ok) {
+        const result = await response.json();
         showSuccessToast({
           title: 'FFmpeg Installed',
-          message: 'Managed FFmpeg has been installed successfully.',
+          message: result.message || 'Managed FFmpeg has been installed successfully.',
         });
+        // Wait a moment for the backend to finalize
+        await new Promise(resolve => setTimeout(resolve, 1000));
         await fetchStatus();
       } else {
         const errorData = await response.json();
         showFailureToast({
           title: 'Installation Failed',
-          message: errorData.detail || 'Failed to install FFmpeg. Please check logs.',
+          message: errorData.message || errorData.detail || 'Failed to install FFmpeg. Please check logs.',
         });
       }
     } catch (error) {

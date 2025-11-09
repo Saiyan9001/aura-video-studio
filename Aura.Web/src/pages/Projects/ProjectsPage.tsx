@@ -29,11 +29,13 @@ import {
   Edit24Regular,
   Delete24Regular,
   DocumentCopy24Regular,
+  Wand24Regular,
 } from '@fluentui/react-icons';
 import { useEffect, useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { RouteErrorBoundary } from '../../components/ErrorBoundary/RouteErrorBoundary';
 import { SkeletonTable, ErrorState } from '../../components/Loading';
+import { WizardProjectsTab } from '../../components/WizardProjectsTab';
 import { getProjects, deleteProject, duplicateProject } from '../../services/projectService';
 import { useJobsStore } from '../../state/jobs';
 import { ProjectListItem } from '../../types/project';
@@ -86,7 +88,7 @@ function ProjectsPageContent() {
   const styles = useStyles();
   const { jobs, loading, listJobs } = useJobsStore();
   const navigate = useNavigate();
-  const [selectedTab, setSelectedTab] = useState<'editor' | 'generated'>('editor');
+  const [selectedTab, setSelectedTab] = useState<'wizard' | 'editor' | 'generated'>('wizard');
   const [editorProjects, setEditorProjects] = useState<ProjectListItem[]>([]);
   const [loadingProjects, setLoadingProjects] = useState(false);
   const [projectsError, setProjectsError] = useState<string | null>(null);
@@ -187,12 +189,22 @@ function ProjectsPageContent() {
       {/* Tabs */}
       <TabList
         selectedValue={selectedTab}
-        onTabSelect={(_, data) => setSelectedTab(data.value as 'editor' | 'generated')}
+        onTabSelect={(_, data) => setSelectedTab(data.value as 'wizard' | 'editor' | 'generated')}
         style={{ marginBottom: tokens.spacingVerticalL }}
       >
-        <Tab value="editor">Editor Projects</Tab>
-        <Tab value="generated">Generated Videos</Tab>
+        <Tab value="wizard" icon={<Wand24Regular />}>
+          Wizard Projects
+        </Tab>
+        <Tab value="editor" icon={<Edit24Regular />}>
+          Editor Projects
+        </Tab>
+        <Tab value="generated" icon={<Video24Regular />}>
+          Generated Videos
+        </Tab>
       </TabList>
+
+      {/* Wizard Projects Tab */}
+      {selectedTab === 'wizard' && <WizardProjectsTab />}
 
       {/* Editor Projects Tab */}
       {selectedTab === 'editor' && (

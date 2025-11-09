@@ -261,7 +261,7 @@ class RequestQueue {
 /**
  * Extended Axios config with custom options
  */
-interface ExtendedAxiosRequestConfig extends AxiosRequestConfig {
+export interface ExtendedAxiosRequestConfig extends AxiosRequestConfig {
   _retry?: number;
   _skipRetry?: boolean;
   _skipCircuitBreaker?: boolean;
